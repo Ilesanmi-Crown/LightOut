@@ -9,8 +9,8 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["icon.svg"],
       manifest: {
-        name: "NEPA-Proof Notes",
-        short_name: "NEPA Notes",
+        name: "Lightout",
+        short_name: "Lightout",
         description: "Study AI that keeps working when the light and data don't.",
         theme_color: "#0b0f14",
         background_color: "#0b0f14",

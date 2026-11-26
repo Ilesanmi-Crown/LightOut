@@ -32,7 +32,7 @@ if (env.VITE_RECAPTCHA_SITE_KEY) {
   });
 } else {
   console.warn(
-    "[NEPA-Proof Notes] VITE_RECAPTCHA_SITE_KEY is not set: App Check is off, so cloud requests will be rejected. On-device AI still works."
+    "[Lightout] VITE_RECAPTCHA_SITE_KEY is not set: App Check is off, so cloud requests will be rejected. On-device AI still works."
   );
 }
 

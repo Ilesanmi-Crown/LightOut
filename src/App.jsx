@@ -13,7 +13,7 @@ import Flashcards from "./components/Flashcards.jsx";
 import Quiz from "./components/Quiz.jsx";
 import PhotoPicker from "./components/PhotoPicker.jsx";
 
-const NOTES_KEY = "nepa-notes:v1";
+const NOTES_KEY = "lightout-notes:v1";
 
 function loadNotes() {
   try {
@@ -157,10 +157,10 @@ export default function App() {
       <div className="grain" aria-hidden="true" />
 
       <header className="topbar">
-        <a className="mark" href="/" aria-label="NEPA-Proof Notes home">
+        <a className="mark" href="/" aria-label="Lightout home">
           <img src="/icon.svg" alt="" width="34" height="34" />
           <span className="wordmark">
-            NEPA<span className="slash">/</span>Proof
+            Light<span className="out">out</span>
             <small>Notes</small>
           </span>
         </a>

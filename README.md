@@ -1,4 +1,4 @@
-# ⚡ NEPA-Proof Notes
+# ⚡ Lightout
 
 **A study assistant that keeps working when the light and data don't.**
 Built for the **Firebase AI Logic hybrid inference hackathon**. It runs Gemini Nano **on your device** in Chrome when it can, and falls back to Gemini **in the cloud** when it must, all through one Firebase AI Logic SDK.
@@ -13,7 +13,7 @@ In Lagos (and much of Nigeria), "NEPA has taken light" is a daily sentence. Stud
 - **Expensive, patchy mobile data**: every AI request costs money, and it fails when the network drops.
 - **Exam pressure** that doesn't pause for outages.
 
-Most AI study tools are cloud-only, so they're useless at exactly the moment a student is revising by torchlight on a laptop battery. NEPA-Proof Notes keeps summaries, explanations, flashcards and quizzes working **with zero data** once the offline model is downloaded.
+Most AI study tools are cloud-only, so they're useless at exactly the moment a student is revising by torchlight on a laptop battery. Lightout keeps summaries, explanations, flashcards and quizzes working **with zero data** once the offline model is downloaded.
 
 ## What it does
 

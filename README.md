@@ -53,6 +53,15 @@ Model instances are cached per *task + mode* (`src/ai.js`), so each mode/schema 
 - **Long notes**: full lecture transcripts beyond Nano's context window.
 - **Unsupported browsers/devices**: phones, Safari, Firefox and low-spec laptops still get every feature.
 
+## Design: "lights out"
+
+The interface shows the grid's state. While online it's lit in volt-lime with a warm glow. When the network drops, it switches to **generator mode**: the glow dims, the accent turns amber, the flickering "blackout" in the headline goes dark, and the animated power line slows down. You can see your connection state at a glance, without reading a pill.
+
+- **Type:** Bricolage Grotesque (display) and Instrument Sans (body), with JetBrains Mono for instrument-panel labels. All are self-hosted and precached, so they still render offline. Only the Latin subsets are cached, about 150 KB, to save data.
+- **Colour:** an `oklch()` palette on a warm near-black, with four WCAG-AA text levels and one accent that swaps between volt and amber.
+- **Motion:** masked headline reveal, staggered tool tiles, scroll-driven reveals where `animation-timeline` is supported, and full `prefers-reduced-motion` support.
+- **Mobile:** the four study tools dock to the bottom of the screen, in the thumb zone. Hover effects only apply on devices with a real pointer, so they never "stick" after a tap.
+
 ## Tech stack
 
 - **Vite + React** (JavaScript), plain CSS, mobile-first dark UI

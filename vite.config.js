@@ -22,7 +22,8 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,svg,png,ico,webmanifest}"],
+        globPatterns: ["**/*.{js,css,html,svg,png,ico,webmanifest}", "**/*-latin-*.woff2"],
+        globIgnores: ["**/*-latin-ext-*.woff2"],
         navigateFallback: "/index.html",
         // Never cache AI / Firebase API calls; only the app shell is offline.
         navigateFallbackDenylist: [/^\/__/],

@@ -59,8 +59,8 @@ export default function PhotoPicker({ image, onChange, onError }) {
           </div>
         </div>
       ) : (
-        <button className="ghost" onClick={() => input.current?.click()}>
-          📷 Add a photo of your notes (optional)
+        <button className="ghost photo-add" onClick={() => input.current?.click()}>
+          <span aria-hidden="true">＋</span> Add a photo of your notes <em>optional · JPEG/PNG</em>
         </button>
       )}
     </div>

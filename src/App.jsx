@@ -38,13 +38,20 @@ function useOnline() {
   return online;
 }
 
-const STATUS_TEXT = {
-  checking: "Checking offline brain…",
-  unsupported: "Offline brain: not supported",
-  unavailable: "Offline brain: unavailable on this device",
-  downloadable: "Offline brain: not downloaded",
-  downloading: "Offline brain: downloading…",
-  available: "Offline brain: ready",
+const BRAIN_SHORT = {
+  checking: "Checking",
+  unsupported: "Not supported",
+  unavailable: "Unavailable",
+  downloadable: "Not downloaded",
+  downloading: "Downloading",
+  available: "Ready",
+};
+
+const TASK_BLURB = {
+  summarize: "The key points, in bullets",
+  explain: "Like you're 15",
+  flashcards: "Tap to flip",
+  quiz: "5 questions, scored",
 };
 
 export default function App() {
@@ -136,94 +143,180 @@ export default function App() {
 
   const tooLong = notes.length > ON_DEVICE_CHAR_LIMIT;
   const canDownload = online && (status === "downloadable" || status === "downloading") && progress === null;
+  const brainTone = status === "available" ? "ok" : status === "unsupported" || status === "unavailable" ? "bad" : "warn";
+  const pct = progress === null ? 0 : Math.round(progress * 100);
+
+  // "Lights out" theme: the whole UI dims when the network drops.
+  useEffect(() => {
+    document.documentElement.dataset.power = online ? "on" : "off";
+  }, [online]);
 
   return (
     <div className="app">
-      <header className="header">
-        <div className="brand">
-          <img src="/icon.svg" alt="" width="36" height="36" />
-          <div>
-            <h1>NEPA-Proof Notes</h1>
-            <p className="tagline">Study AI that keeps working when the light and data don't.</p>
+      <div className="glow" aria-hidden="true" />
+      <div className="grain" aria-hidden="true" />
+
+      <header className="topbar">
+        <a className="mark" href="/" aria-label="NEPA-Proof Notes home">
+          <img src="/icon.svg" alt="" width="34" height="34" />
+          <span className="wordmark">
+            NEPA<span className="slash">/</span>Proof
+            <small>Notes</small>
+          </span>
+        </a>
+        <div className="meter" role="status" aria-live="polite">
+          <div className={`reading ${online ? "ok" : "bad"}`}>
+            <span className="k">Grid</span>
+            <span className="v">
+              <span className="dot" />
+              {online ? "Online" : "Offline"}
+            </span>
           </div>
-        </div>
-        <div className="pills">
-          <span className={`pill ${online ? "ok" : "bad"}`}>
-            <span className="dot" /> {online ? "Online" : "Offline"}
-          </span>
-          <span className={`pill ${status === "available" ? "ok" : status === "unsupported" || status === "unavailable" ? "bad" : "warn"}`}>
-            <span className="dot" /> {STATUS_TEXT[status] || status}
-          </span>
+          <div className={`reading ${brainTone}`}>
+            <span className="k">Offline brain</span>
+            <span className="v">
+              <span className="dot" />
+              {BRAIN_SHORT[status] || status}
+            </span>
+          </div>
         </div>
       </header>
 
+      <section className="hero">
+        <p className="eyebrow">
+          <span>Study assistant</span>
+          <span>Lagos, NG</span>
+          <span>{online ? "Grid: on" : "Generator mode"}</span>
+        </p>
+        <h1 aria-label="Study through the blackout.">
+          <span className="line" aria-hidden="true">
+            <span>Study through</span>
+          </span>
+          <span className="line" aria-hidden="true">
+            <span>
+              the <em className="flicker">blackout</em>.
+            </span>
+          </span>
+        </h1>
+        <div className="hero-foot">
+          <p className="lede">
+            Summaries, plain-English explanations, flashcards and quizzes, running on your laptop when NEPA takes light,
+            and in the cloud when your notes are long.
+          </p>
+          <ol className="route" aria-label="How requests are routed">
+            <li>
+              <span className="n">≤20k</span>
+              <span>chars</span>
+              <b>→ your device</b>
+            </li>
+            <li>
+              <span className="n">&gt;20k</span>
+              <span>chars</span>
+              <b>→ the cloud</b>
+            </li>
+            <li>
+              <span className="n">0</span>
+              <span>bars</span>
+              <b>→ device only</b>
+            </li>
+          </ol>
+        </div>
+        <svg className="wire" viewBox="0 0 1200 40" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0 20 H380 L410 4 L440 36 L470 8 L495 30 L515 20 H1200" />
+        </svg>
+      </section>
+
       {status !== "available" && status !== "checking" && (
-        <section className="card onboarding">
+        <section className={`panel onboarding ${status === "unsupported" || status === "unavailable" ? "is-unsupported" : ""}`}>
           {status === "unsupported" || status === "unavailable" ? (
-            <p>
-              <strong>Offline mode needs Chrome desktop v139+</strong> with the on-device Prompt API enabled
-              {status === "unavailable" ? " and a device that meets Gemini Nano's hardware requirements" : ""}. The app still
-              works for you through the cloud while you're online.
-            </p>
+            <div className="onb-grid">
+              <div className="onb-num">⌁</div>
+              <div>
+                <h2>Cloud mode on this browser</h2>
+                <p>
+                  Offline mode needs <strong>Chrome desktop v139+</strong> with the on-device Prompt API enabled
+                  {status === "unavailable" ? ", on a device that meets Gemini Nano's hardware requirements" : ""}. Everything
+                  below still works for you through the cloud while you're online.
+                </p>
+              </div>
+            </div>
           ) : (
-            <>
-              <p>
-                <strong>Get ready for the next blackout.</strong> Download the offline brain (Gemini Nano, a one-time
-                download of a few GB) while you have Wi-Fi. After that, summaries, flashcards and quizzes work with no data.
-              </p>
-              <button className="primary" onClick={handleDownload} disabled={!canDownload}>
-                {progress !== null ? "Downloading…" : "Download the offline brain"}
-              </button>
-              {!online && <p className="hint">You need to be online to download it.</p>}
-              {progress !== null && (
-                <div className="progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
-                  <div className="bar" style={{ width: `${Math.round(progress * 100)}%` }} />
-                  <span>{Math.round(progress * 100)}%</span>
-                </div>
-              )}
-            </>
+            <div className="onb-grid">
+              <div className="onb-num" aria-hidden="true">
+                {String(pct).padStart(2, "0")}
+                <small>%</small>
+              </div>
+              <div>
+                <h2>Charge up before the next outage.</h2>
+                <p>
+                  Download the offline brain (Gemini Nano, a one-time download of a few GB) while you have Wi-Fi. After
+                  that, every feature works with zero data.
+                </p>
+                <button className="cta" onClick={handleDownload} disabled={!canDownload}>
+                  <span>{progress !== null ? "Downloading…" : "Download the offline brain"}</span>
+                  <span className="arrow" aria-hidden="true">↓</span>
+                </button>
+                {!online && <p className="hint">You need to be online to download it.</p>}
+                {progress !== null && (
+                  <div className="progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
+                    <div className="bar" style={{ width: `${pct}%` }} />
+                  </div>
+                )}
+              </div>
+            </div>
           )}
         </section>
       )}
 
-      <section className="card">
-        <label htmlFor="notes" className="label">
-          Your notes
-          <span className={`counter ${tooLong ? "warn-text" : ""}`}>
-            {notes.length.toLocaleString()} chars{tooLong ? " · cloud only" : ""} · {saved ? "saved" : "saving…"}
-          </span>
-        </label>
-        <textarea
-          id="notes"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="Paste or type your lecture notes here. They're saved on this device automatically."
-          rows={10}
-        />
-        <PhotoPicker image={image} onChange={setImage} onError={setError} />
+      <main className="workspace">
+        <section className="panel editor">
+          <div className="panel-head">
+            <label htmlFor="notes">Your notes</label>
+            <span className={`counter ${tooLong ? "warn-text" : ""}`}>
+              {notes.length.toLocaleString()} chars{tooLong ? " · cloud only" : ""}
+              <span className={`save ${saved ? "" : "is-saving"}`}>{saved ? "Saved" : "Saving"}</span>
+            </span>
+          </div>
+          <textarea
+            id="notes"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Paste or type your lecture notes here. They're saved on this device automatically, so a power cut won't eat them."
+            rows={12}
+          />
+          <div className="limit" aria-hidden="true">
+            <div style={{ width: `${Math.min(100, (notes.length / ON_DEVICE_CHAR_LIMIT) * 100)}%` }} className={tooLong ? "over" : ""} />
+          </div>
+          <PhotoPicker image={image} onChange={setImage} onError={setError} />
+        </section>
 
-        <div className="actions">
-          {Object.entries(TASKS).map(([key, t]) => (
-            <button key={key} onClick={() => handleTask(key)} disabled={!!busy}>
-              {busy === key ? "Thinking…" : t.label}
+        <nav className="actions" aria-label="Study tools">
+          {Object.entries(TASKS).map(([key, t], i) => (
+            <button key={key} style={{ "--i": i }} onClick={() => handleTask(key)} disabled={!!busy} className={busy === key ? "is-busy" : ""}>
+              <span className="idx">0{i + 1}</span>
+              <span className="name">{busy === key ? "Thinking…" : t.label}</span>
+              <span className="desc">{TASK_BLURB[key]}</span>
+              <span className="arrow" aria-hidden="true">→</span>
             </button>
           ))}
-        </div>
-        {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
-        )}
-      </section>
+        </nav>
+      </main>
+
+      {error && (
+        <p className="error" role="alert">
+          <span aria-hidden="true">!</span>
+          {error}
+        </p>
+      )}
 
       {busy && (
-        <section className="card muted">
-          <div className="spinner" /> Working on "{TASKS[busy].label}"…
+        <section className="panel loading" aria-live="polite">
+          <div className="pulse" /> Working on {TASKS[busy].label.toLowerCase()}…
         </section>
       )}
 
       {result && (
-        <section className="card result" ref={resultRef}>
+        <section className="panel result" ref={resultRef}>
           <div className="result-head">
             <h2>{TASKS[result.taskKey].label}</h2>
             <SourceBadge source={result.source} />
@@ -235,12 +328,22 @@ export default function App() {
           ) : (
             <div className="prose">{result.data}</div>
           )}
-          <p className="hint">{result.reason}</p>
+          <p className="hint route-note">{result.reason}</p>
         </section>
       )}
 
       <footer className="footer">
-        Built with Firebase AI Logic hybrid inference: Gemini Nano in Chrome, Gemini in the cloud.
+        <div className="ticker" aria-hidden="true">
+          <div>
+            {Array.from({ length: 2 }).map((_, k) => (
+              <span key={k}>
+                No light <i>✦</i> No data <i>✦</i> No problem <i>✦</i> Gemini Nano on-device <i>✦</i> Gemini in the cloud{" "}
+                <i>✦</i>{" "}
+              </span>
+            ))}
+          </div>
+        </div>
+        <p>Built with Firebase AI Logic hybrid inference.</p>
       </footer>
     </div>
   );
@@ -248,7 +351,16 @@ export default function App() {
 
 function SourceBadge({ source }) {
   if (source === InferenceSource.ON_DEVICE)
-    return <span className="badge device">📱 Ran on your device</span>;
-  if (source === InferenceSource.IN_CLOUD) return <span className="badge cloud">☁️ Ran in the cloud</span>;
+    return (
+      <span className="badge device">
+        <span className="dot" /> Ran on your device
+      </span>
+    );
+  if (source === InferenceSource.IN_CLOUD)
+    return (
+      <span className="badge cloud">
+        <span className="dot" /> Ran in the cloud
+      </span>
+    );
   return null;
 }

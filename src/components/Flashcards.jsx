@@ -9,6 +9,7 @@ export default function Flashcards({ cards }) {
         {cards.map((c, i) => (
           <button
             key={i}
+            style={{ "--i": i }}
             className={`flashcard ${flipped[i] ? "flipped" : ""}`}
             onClick={() => setFlipped((f) => ({ ...f, [i]: !f[i] }))}
             aria-label={flipped[i] ? `Answer: ${c.back}` : `Question: ${c.front}`}

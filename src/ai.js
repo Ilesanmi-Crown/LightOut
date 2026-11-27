@@ -3,11 +3,11 @@ import {
   InferenceMode,
   InferenceSource,
   Schema,
-  AIError,
 } from "firebase/ai";
 import { ai } from "./firebase.js";
 import { getConfig } from "./lib/config.js";
 import { addSavings } from "./lib/savings.js";
+import { formatRawError, setLastAIError } from "./lib/diagnostics.js";
 
 export { InferenceMode, InferenceSource };
 
@@ -242,7 +242,16 @@ function parseJson(text) {
  * we fall back to what the routing mode guarantees.
  * Every on-device call adds its request + response bytes to the savings counter.
  */
-export async function runPrompt({ taskKey, parts, mode, onText }) {
+export async function runPrompt(args) {
+  try {
+    return await runPromptInner(args);
+  } catch (err) {
+    setLastAIError(err, { task: args.taskKey, mode: args.mode, online: navigator.onLine });
+    throw err;
+  }
+}
+
+async function runPromptInner({ taskKey, parts, mode, onText }) {
   const model = getModel(taskKey, mode);
   const task = ALL_TASKS[taskKey];
   let response;
@@ -335,18 +344,17 @@ function normalise(taskKey, obj) {
 }
 
 // ---------- Friendly errors ----------
+/**
+ * Error text for the UI. Cloud/SDK errors are shown RAW (name, code, message, and
+ * customErrorData status/statusText/errorDetails) instead of being guessed at.
+ * Only the offline on-device case gets a short hint in front of the raw error.
+ */
 export function friendlyError(err, { online }) {
-  const msg = String(err?.message || err || "");
-  const code = err instanceof AIError ? err.code : err?.code;
+  const raw = formatRawError(err);
   if (!online) {
-    if (/on-device model is not available|not available in this environment|API_NOT_ENABLED/i.test(msg) || code === "api-not-enabled" || code === "unsupported")
-      return "You're offline and the offline brain isn't ready on this device. Reconnect and tap \"Download the offline brain\" first.";
-    return `Offline AI failed: ${msg || "unknown error"}. Try a shorter chunk of notes.`;
+    const msg = String(err?.message || "");
+    if (/on-device model is not available|not available in this environment/i.test(msg) || ["api-not-enabled", "unsupported"].includes(err?.code))
+      return `You're offline and the offline brain isn't ready on this device. Reconnect and tap "Download the offline brain" first.\n\n${raw}`;
   }
-  if (/app.?check|appcheck|401|403|PERMISSION_DENIED/i.test(msg))
-    return "The cloud rejected this request (App Check). If you're developing locally, register your App Check debug token in the Firebase Console.";
-  if (/quota|429|RESOURCE_EXHAUSTED/i.test(msg)) return "The cloud AI is busy or over quota. Wait a minute and try again.";
-  if (/fetch|network|Failed to fetch|ERR_/i.test(msg)) return "Couldn't reach the cloud. Your data may have dropped; try again, or use offline mode.";
-  if (/too large|token|exceed/i.test(msg)) return "That was too much for the model. Try a smaller chunk of notes.";
-  return msg || "Something went wrong. Please try again.";
+  return raw;
 }

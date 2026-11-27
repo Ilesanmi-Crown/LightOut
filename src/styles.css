@@ -711,3 +711,24 @@ textarea:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 6
   .head-actions > * { flex: 1; justify-content: center; }
   .pack-count { width: 100%; margin-left: 0; }
 }
+
+/* ---------- Raw errors + ?debug=1 diagnostics ---------- */
+.error { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.9rem; }
+.debug { margin-top: 14px; border-color: color-mix(in srgb, var(--cloud) 40%, var(--line)); display: grid; gap: 14px; }
+.debug-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.debug h2 { margin: 0; font: 700 1.2rem/1 var(--display); }
+.debug h3 { margin: 0; font: 600 0.8rem/1.2 var(--mono); color: var(--paper); }
+.debug-grid { margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+.debug-grid div { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--ink); }
+.debug-grid dt { font: 600 0.62rem/1.2 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); }
+.debug-grid dd { margin: 4px 0 0; font: 0.82rem/1.35 var(--mono); overflow-wrap: anywhere; }
+.debug-block { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.debug-block p { margin: 0; font: 0.82rem/1.4 var(--mono); }
+.debug-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.debug-row .ghost { padding: 6px 12px; font-size: 0.8rem; }
+.debug-pre {
+  margin: 0; padding: 10px 12px; border-radius: 8px; background: var(--ink); border: 1px solid var(--line);
+  font: 0.78rem/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto;
+}
+.debug-pre.bad { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); color: #ffd9d4; }
+.debug summary { cursor: pointer; font: 0.78rem/1.4 var(--mono); color: var(--muted); }

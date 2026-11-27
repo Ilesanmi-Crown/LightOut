@@ -5,6 +5,10 @@ import { refreshConfig } from "./lib/config.js";
 import { syncPacks } from "./lib/sync.js";
 import { validatePack } from "./lib/packs.js";
 import OfflineBrainPanel from "./components/OfflineBrainPanel.jsx";
+import DebugPanel from "./components/DebugPanel.jsx";
+import { isDebug } from "./lib/diagnostics.js";
+
+const DEBUG = isDebug();
 import QuickTools from "./screens/QuickTools.jsx";
 import NewPack from "./screens/NewPack.jsx";
 import PackLibrary from "./screens/PackLibrary.jsx";
@@ -136,6 +140,8 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {DEBUG && <DebugPanel online={online} />}
 
       <nav className="mainnav" aria-label="Main">
         {NAV.map((n) => (

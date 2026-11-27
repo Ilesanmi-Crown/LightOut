@@ -96,11 +96,10 @@ export default function NewPack({ online, onCreated }) {
     } catch (e) {
       console.error(e);
       setStage(null);
-      setError(
-        /JSON|pack|section|question/i.test(e?.message || "")
-          ? `The AI's pack didn't come out right (${e.message}). Please try again.`
-          : friendlyError(e, { online: navigator.onLine })
-      );
+      // Our own validation errors (no Firebase error code) get a short explanation;
+      // everything from the SDK/network is shown raw.
+      const fromSdk = Boolean(e?.code) || /FirebaseError|AIError/.test(e?.name || "");
+      setError(fromSdk ? friendlyError(e, { online: navigator.onLine }) : `The AI's pack didn't come out right: ${e?.message || e}. Please try again.`);
     }
   }
 

@@ -154,6 +154,9 @@ export async function readPackFile(file) {
     throw new Error("That file isn't valid JSON. Pick a .lightout.json file.");
   }
   if (data?.format && data.format !== PACK_FORMAT) throw new Error("That JSON file isn't a Lightout pack.");
+  const candidate = data?.format ? data.pack : data;
+  if (!candidate || typeof candidate !== "object" || !("sections" in candidate) || !("questions" in candidate))
+    throw new Error("That JSON file isn't a Lightout pack. Ask your classmate to use Export on their pack.");
   const pack = validatePack(data?.format ? data.pack : data);
   return { ...pack, source: "imported", updatedAt: Date.now() };
 }

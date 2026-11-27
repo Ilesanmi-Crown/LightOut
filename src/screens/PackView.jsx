@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { getPack } from "../lib/db.js";
+import { getPack, deletePack } from "../lib/db.js";
+import { exportPack } from "../lib/packs.js";
+import { removeRemotePack } from "../lib/sync.js";
 import { PackQuiz, PackAsk } from "./PackStudy.jsx";
 
 const TABS = [
@@ -43,6 +45,25 @@ export default function PackView({ packId, online, onStatus, onBack }) {
         <span className="pack-code">{pack.courseCode || "Study pack"}</span>
         <h2>{pack.title}</h2>
         {pack.summary && <p className="pack-summary">{pack.summary}</p>}
+        <div className="pack-actions">
+          <button className="ghost" onClick={() => exportPack(pack)} title="Save as a .lightout.json file to share over Bluetooth or a flash drive">
+            ⇡ Export to share
+          </button>
+          <button
+            className="ghost danger"
+            onClick={async () => {
+              if (!window.confirm(`Delete "${pack.title}" from this device${navigator.onLine ? " and your synced copy" : ""}?`)) return;
+              await deletePack(pack.id);
+              removeRemotePack(pack.id);
+              onBack();
+            }}
+          >
+            Delete
+          </button>
+          <span className="pack-count">
+            {pack.sections.length} sections · {pack.questions.length} questions
+          </span>
+        </div>
         <div className="tabs" role="tablist">
           {TABS.map((t) => (
             <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? "on" : ""} onClick={() => setTab(t.key)}>

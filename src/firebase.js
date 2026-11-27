@@ -1,6 +1,9 @@
 import { initializeApp } from "firebase/app";
 import { initializeAppCheck, ReCaptchaV3Provider } from "firebase/app-check";
 import { getAI, GoogleAIBackend } from "firebase/ai";
+import { getAuth } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
+import { getRemoteConfig } from "firebase/remote-config";
 
 const env = import.meta.env;
 
@@ -38,3 +41,8 @@ if (env.VITE_RECAPTCHA_SITE_KEY) {
 
 // ALL AI calls (on-device and cloud) go through Firebase AI Logic.
 export const ai = getAI(app, { backend: new GoogleAIBackend() });
+
+// Anonymous Auth gives each device a uid for syncing packs; Firestore holds the synced copy.
+export const auth = getAuth(app);
+export const db = getFirestore(app);
+export const remoteConfig = getRemoteConfig(app);

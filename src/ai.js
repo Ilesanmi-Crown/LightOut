@@ -6,10 +6,10 @@ import {
   AIError,
 } from "firebase/ai";
 import { ai } from "./firebase.js";
+import { getConfig } from "./lib/config.js";
+import { addSavings } from "./lib/savings.js";
 
 export { InferenceMode, InferenceSource };
-
-const CLOUD_MODEL = import.meta.env.VITE_CLOUD_MODEL || "gemini-3.8-flash";
 
 /** On-device (Gemini Nano) prompt limit is ~9216 tokens; ~20k chars keeps us safely under it. */
 export const ON_DEVICE_CHAR_LIMIT = 20000;
@@ -82,16 +82,75 @@ export const TASKS = {
   },
 };
 
-// ---------- Model cache (one instance per task + mode) ----------
+// ---------- Study Pack schemas & tasks ----------
+export const packSchema = Schema.object({
+  properties: {
+    title: Schema.string(),
+    courseCode: Schema.string(),
+    summary: Schema.string(),
+    sections: Schema.array({
+      items: Schema.object({
+        properties: {
+          id: Schema.string(),
+          title: Schema.string(),
+          explanation: Schema.string(),
+          keyTerms: Schema.array({
+            items: Schema.object({ properties: { term: Schema.string(), definition: Schema.string() } }),
+          }),
+          workedExample: Schema.string(),
+        },
+      }),
+    }),
+    questions: Schema.array({
+      items: Schema.object({
+        properties: {
+          id: Schema.string(),
+          sectionId: Schema.string(),
+          type: Schema.enumString({ enum: ["mcq", "short"] }),
+          question: Schema.string(),
+          options: Schema.array({ items: Schema.string() }),
+          answerIndex: Schema.integer(),
+          modelAnswer: Schema.string(),
+          explanation: Schema.string(),
+        },
+        optionalProperties: ["options", "answerIndex"],
+      }),
+    }),
+  },
+});
+
+const markSchema = Schema.object({
+  properties: {
+    score: Schema.integer(),
+    verdict: Schema.enumString({ enum: ["correct", "partly", "wrong"] }),
+    feedback: Schema.string(),
+  },
+});
+
+/** Tasks used by Study Packs (not shown as Quick Tools buttons). */
+export const PACK_TASKS = {
+  buildPack: { label: "Build pack", json: true, schema: packSchema, maxOutputTokens: 32768 },
+  mark: { label: "Mark answer", json: true, schema: markSchema },
+  ask: { label: "Ask about this pack", json: false },
+};
+
+const ALL_TASKS = { ...TASKS, ...PACK_TASKS };
+
+// ---------- Model cache (one instance per task + mode + cloud model) ----------
 const modelCache = new Map();
 
 export function getModel(taskKey, mode) {
-  const key = `${taskKey}:${mode}`;
+  const cloudModel = getConfig().cloud_model_name;
+  const key = `${taskKey}:${mode}:${cloudModel}`;
   if (modelCache.has(key)) return modelCache.get(key);
 
-  const task = TASKS[taskKey];
+  const task = ALL_TASKS[taskKey];
   const generationConfig = task?.json
-    ? { responseMimeType: "application/json", responseSchema: task.schema }
+    ? {
+        responseMimeType: "application/json",
+        responseSchema: task.schema,
+        ...(task.maxOutputTokens ? { maxOutputTokens: task.maxOutputTokens } : {}),
+      }
     : undefined;
   const promptOptions = task?.json
     ? { responseConstraint: task.schema.toJSON() }
@@ -99,7 +158,7 @@ export function getModel(taskKey, mode) {
 
   const model = getGenerativeModel(ai, {
     mode,
-    inCloudParams: { model: CLOUD_MODEL, generationConfig },
+    inCloudParams: { model: cloudModel, generationConfig },
     onDeviceParams: { createOptions: CREATE_OPTIONS, promptOptions },
   });
   modelCache.set(key, model);
@@ -177,20 +236,20 @@ function parseJson(text) {
 }
 
 /**
- * Runs a task. Text tasks stream (onText receives the growing text); JSON tasks don't,
- * because a half-finished JSON object can't be rendered.
+ * Runs any prompt through Firebase AI Logic. Text tasks stream (onText gets the growing text);
+ * JSON tasks don't, because half a JSON object can't be rendered.
  * `source` comes from the final aggregated response; if the SDK doesn't report it,
- * we fall back to what the routing mode implies.
+ * we fall back to what the routing mode guarantees.
+ * Every on-device call adds its request + response bytes to the savings counter.
  */
-export async function runTask({ taskKey, notes, image, mode, onText }) {
+export async function runPrompt({ taskKey, parts, mode, onText }) {
   const model = getModel(taskKey, mode);
-  const task = TASKS[taskKey];
-  const prompt = buildPrompt(taskKey, notes, image);
+  const task = ALL_TASKS[taskKey];
   let response;
   let text = "";
 
   if (!task.json) {
-    const result = await model.generateContentStream(prompt);
+    const result = await model.generateContentStream(parts);
     for await (const chunk of result.stream) {
       let piece = "";
       try {
@@ -205,14 +264,52 @@ export async function runTask({ taskKey, notes, image, mode, onText }) {
     }
     response = await result.response;
   } else {
-    response = (await model.generateContent(prompt)).response;
+    response = (await model.generateContent(parts)).response;
     text = response.text();
   }
 
   const source = response?.inferenceSource ?? fallbackSource(mode);
-  const data = task.json ? normalise(taskKey, parseJson(text)) : text;
+  if (source === InferenceSource.ON_DEVICE) {
+    addSavings({ requestBytes: partsBytes(parts), responseBytes: utf8Bytes(text) }).catch(() => {});
+  }
+  return { text, source };
+}
+
+export async function runTask({ taskKey, notes, image, mode, onText }) {
+  const { text, source } = await runPrompt({ taskKey, parts: buildPrompt(taskKey, notes, image), mode, onText });
+  const data = TASKS[taskKey].json ? normalise(taskKey, parseJson(text)) : text;
   return { data, source };
 }
+
+const encoder = new TextEncoder();
+function utf8Bytes(str) {
+  return encoder.encode(str || "").length;
+}
+/** What the same request would have cost on the wire as a cloud call (text + base64 attachments). */
+function partsBytes(parts) {
+  return parts.reduce((n, p) => n + (p.text ? utf8Bytes(p.text) : 0) + (p.inlineData?.data?.length || 0), 0);
+}
+
+/**
+ * Picks the inference mode with the existing routing rules, and when offline confirms the
+ * on-device model is actually ready (otherwise ONLY_ON_DEVICE would try to download it and hang).
+ * Returns { mode, reason } or { error }.
+ */
+export async function prepareRoute({ chars, online }) {
+  const route = chooseRoute({ chars, online });
+  if (route.error || online) return route;
+  const s = await getOnDeviceStatus();
+  if (s === "available") return route;
+  return {
+    error:
+      s === "unsupported" || s === "unavailable"
+        ? "You're offline and this browser can't run AI on-device. Reconnect to use the cloud, or open the app in Chrome desktop 139+."
+        : 'You\'re offline and the offline brain isn\'t downloaded yet. Reconnect, then tap "Download the offline brain".',
+    status: s,
+  };
+}
+
+export { parseJson };
 
 function fallbackSource(mode) {
   if (mode === InferenceMode.ONLY_IN_CLOUD) return InferenceSource.IN_CLOUD;

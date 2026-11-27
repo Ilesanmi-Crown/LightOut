@@ -176,15 +176,48 @@ function parseJson(text) {
   }
 }
 
-export async function runTask({ taskKey, notes, image, mode }) {
+/**
+ * Runs a task. Text tasks stream (onText receives the growing text); JSON tasks don't,
+ * because a half-finished JSON object can't be rendered.
+ * `source` comes from the final aggregated response; if the SDK doesn't report it,
+ * we fall back to what the routing mode implies.
+ */
+export async function runTask({ taskKey, notes, image, mode, onText }) {
   const model = getModel(taskKey, mode);
-  const result = await model.generateContent(buildPrompt(taskKey, notes, image));
-  const response = result.response;
-  const text = response.text();
-  const source = response.inferenceSource ?? (mode === InferenceMode.ONLY_IN_CLOUD ? InferenceSource.IN_CLOUD : undefined);
   const task = TASKS[taskKey];
+  const prompt = buildPrompt(taskKey, notes, image);
+  let response;
+  let text = "";
+
+  if (!task.json) {
+    const result = await model.generateContentStream(prompt);
+    for await (const chunk of result.stream) {
+      let piece = "";
+      try {
+        piece = chunk.text();
+      } catch {
+        /* chunk without text (e.g. safety metadata) */
+      }
+      if (piece) {
+        text += piece;
+        onText?.(text);
+      }
+    }
+    response = await result.response;
+  } else {
+    response = (await model.generateContent(prompt)).response;
+    text = response.text();
+  }
+
+  const source = response?.inferenceSource ?? fallbackSource(mode);
   const data = task.json ? normalise(taskKey, parseJson(text)) : text;
   return { data, source };
+}
+
+function fallbackSource(mode) {
+  if (mode === InferenceMode.ONLY_IN_CLOUD) return InferenceSource.IN_CLOUD;
+  if (mode === InferenceMode.ONLY_ON_DEVICE) return InferenceSource.ON_DEVICE;
+  return undefined; // PREFER_ON_DEVICE could have gone either way: don't guess.
 }
 
 function normalise(taskKey, obj) {

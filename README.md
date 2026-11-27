@@ -15,6 +15,16 @@ In Lagos (and much of Nigeria), "NEPA has taken light" is a daily sentence. Stud
 
 Most AI study tools are cloud-only, so they're useless at exactly the moment a student is revising by torchlight on a laptop battery. Lightout keeps summaries, explanations, flashcards and quizzes working **with zero data** once the offline model is downloaded.
 
+## Features
+
+- **Try with sample notes:** one tap loads ~300 words of ECO 101 lecture notes (demand, supply and elasticity, with Lagos fuel and bread examples), so you can test every feature without typing. The sample lives in `src/sampleNotes.js`.
+- **Visible hybrid stats:** every AI call is timed with `performance.now()`, and the result badge shows where it ran and how long it took, for example **🔒 On device · 1.2s** or **☁️ Cloud · 2.8s**. A stats bar keeps a running "X on-device · Y cloud" count, saved in `localStorage`, with a reset link.
+- **Streaming:** Summarize and Explain simply use `generateContentStream`, so text appears as it's generated, both on-device and in the cloud. Flashcards and Quiz use `generateContent`, because they return structured JSON. The badge reads `inferenceSource` from the final aggregated response. If that's missing, it falls back to what the routing mode guarantees.
+- **Offline banner:** when the connection drops, a banner says **"⚡ No light, no data? Lightout is still working."** When it comes back, "Back online — cloud available again" shows for 3 seconds.
+- **How it works:** a 3-step strip under the header: *Paste your notes → AI runs on your laptop → Cloud only when needed*. On browsers without the on-device model, a note explains that offline mode needs Chrome desktop v139+ and that the cloud still works.
+- **Privacy line:** every on-device result ends with **"🔒 Your notes never left this device."**
+- **Loading states:** the tool buttons show a spinner and "Thinking…", which switches to "Writing…" once streamed text starts arriving.
+
 ## What it does
 
 | Feature | Output | On-device | Cloud |
@@ -25,7 +35,7 @@ Most AI study tools are cloud-only, so they're useless at exactly the moment a s
 | **Quiz me** | 5 MCQs, click to answer, live score | ✅ (`responseConstraint`) | ✅ (`responseSchema`) |
 | **Photo of notes** | JPEG/PNG sent as `inlineData` | ✅ | ✅ |
 
-Every result carries a badge, **📱 Ran on your device** or **☁️ Ran in the cloud**, read from `result.response.inferenceSource`.
+Every result carries a timed badge, **🔒 On device · 1.2s** or **☁️ Cloud · 2.8s**, read from the response's `inferenceSource`.
 Status pills show **Online/Offline** (live `online`/`offline` events) and the **offline brain** status (`LanguageModel.availability()`).
 Notes autosave to `localStorage`, and the app shell is a **PWA** that loads with no network.
 
@@ -133,12 +143,12 @@ Add your Hosting domain (`<project>.web.app`) to the reCAPTCHA key's allowed dom
 
 1. Open the deployed app in **Chrome desktop 139+** with the flag above enabled.
 2. Click **Download the offline brain** and wait for **Offline brain: ready**.
-3. Paste some notes, click **Summarize**. The badge should read **📱 Ran on your device**.
-4. **Simulate a NEPA outage**: DevTools → *Network* → **Offline**, or turn off Wi-Fi. The pill flips to **Offline**.
+3. Tap **Try with sample notes**, then **Summarize**. The text streams in, the badge reads **🔒 On device · 1.2s** (your time will vary), and the result ends with "🔒 Your notes never left this device."
+4. **Simulate a NEPA outage**: DevTools → *Network* → **Offline**, or turn off Wi-Fi. The amber banner appears: **"⚡ No light, no data? Lightout is still working."**
 5. **Reload the page**. The PWA shell still loads, and your notes are still there (`localStorage`).
-6. Try **Flashcards** and **Quiz me**. Both still work, and the badge stays **📱 Ran on your device**.
+6. Try **Flashcards** and **Quiz me**. Both still work, the badge stays **🔒 On device**, and the stats bar's on-device count goes up.
 7. Paste more than 20,000 characters while offline. You get *"too long to process offline, try a smaller chunk"*.
-8. Go back online with the long notes and click **Summarize**. It routes to **☁️ Ran in the cloud**.
+8. Go back online with the long notes and click **Summarize**. You see "Back online — cloud available again" for 3 seconds, and the request routes to **☁️ Cloud · 2.8s** (your time will vary).
 9. Open the app in Firefox, Safari or a phone. You see the "Offline mode needs Chrome desktop v139+" note, and everything works via the cloud.
 
 ## Limitations (by design)

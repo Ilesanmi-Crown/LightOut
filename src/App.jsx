@@ -12,8 +12,51 @@ import {
 import Flashcards from "./components/Flashcards.jsx";
 import Quiz from "./components/Quiz.jsx";
 import PhotoPicker from "./components/PhotoPicker.jsx";
+import { SAMPLE_NOTES } from "./sampleNotes.js";
 
 const NOTES_KEY = "lightout-notes:v1";
+const STATS_KEY = "lightout-stats:v1";
+const EMPTY_STATS = { device: 0, cloud: 0 };
+
+function loadStats() {
+  try {
+    const s = JSON.parse(localStorage.getItem(STATS_KEY) || "null");
+    return s && Number.isFinite(s.device) && Number.isFinite(s.cloud) ? s : EMPTY_STATS;
+  } catch {
+    return EMPTY_STATS;
+  }
+}
+
+function saveStats(stats) {
+  try {
+    localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+  } catch {
+    /* storage blocked: stats stay in memory for this visit */
+  }
+}
+
+function formatSecs(ms) {
+  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
+
+/** Shows "offline" while offline, then "back" for 3 seconds after reconnecting. */
+function useConnectionBanner(online) {
+  const [banner, setBanner] = useState(online ? null : "offline");
+  const wasOffline = useRef(!online);
+  useEffect(() => {
+    if (!online) {
+      wasOffline.current = true;
+      setBanner("offline");
+      return;
+    }
+    if (!wasOffline.current) return;
+    wasOffline.current = false;
+    setBanner("back");
+    const t = setTimeout(() => setBanner(null), 3000);
+    return () => clearTimeout(t);
+  }, [online]);
+  return banner;
+}
 
 function loadNotes() {
   try {
@@ -62,9 +105,32 @@ export default function App() {
   const [status, setStatus] = useState("checking");
   const [progress, setProgress] = useState(null); // 0..1 while downloading
   const [busy, setBusy] = useState(null); // task key
-  const [result, setResult] = useState(null); // { taskKey, data, source, reason }
+  const [result, setResult] = useState(null); // { taskKey, data, source, reason, ms, streaming }
   const [error, setError] = useState("");
+  const [stats, setStats] = useState(loadStats);
+  const banner = useConnectionBanner(online);
   const resultRef = useRef(null);
+
+  function recordSource(source) {
+    const key = source === InferenceSource.ON_DEVICE ? "device" : source === InferenceSource.IN_CLOUD ? "cloud" : null;
+    if (!key) return;
+    setStats((prev) => {
+      const next = { ...prev, [key]: prev[key] + 1 };
+      saveStats(next);
+      return next;
+    });
+  }
+
+  function resetStats() {
+    setStats(EMPTY_STATS);
+    saveStats(EMPTY_STATS);
+  }
+
+  function loadSample() {
+    if (notes.trim() && notes !== SAMPLE_NOTES && !window.confirm("Replace your current notes with the sample notes?")) return;
+    setNotes(SAMPLE_NOTES);
+    setError("");
+  }
 
   // Autosave notes (debounced).
   useEffect(() => {
@@ -129,11 +195,31 @@ export default function App() {
     }
     setBusy(taskKey);
     setResult(null);
-    try {
-      const { data, source } = await runTask({ taskKey, notes, image, mode: route.mode });
-      setResult({ taskKey, data, source, reason: route.reason });
+    const scrollToResult = () =>
       requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    let scrolled = false;
+    const start = performance.now();
+    try {
+      const { data, source } = await runTask({
+        taskKey,
+        notes,
+        image,
+        mode: route.mode,
+        // Text tasks stream: show the words as they arrive.
+        onText: (text) => {
+          setResult({ taskKey, data: text, source: null, reason: route.reason, streaming: true });
+          if (!scrolled) {
+            scrolled = true;
+            scrollToResult();
+          }
+        },
+      });
+      const ms = performance.now() - start;
+      setResult({ taskKey, data, source, reason: route.reason, ms, streaming: false });
+      recordSource(source);
+      if (!scrolled) scrollToResult();
     } catch (e) {
+      setResult(null);
       console.error(e);
       setError(friendlyError(e, { online }));
     } finally {
@@ -155,6 +241,23 @@ export default function App() {
     <div className="app">
       <div className="glow" aria-hidden="true" />
       <div className="grain" aria-hidden="true" />
+
+      {banner && (
+        <div className={`conn-banner ${banner}`} role="status" aria-live="polite">
+          {banner === "offline" ? (
+            <>
+              <strong>⚡ No light, no data? Lightout is still working.</strong>
+              <span>
+                {status === "available"
+                  ? "Your offline brain is ready. Everything runs on this device."
+                  : "Download the offline brain next time you're online to use AI with no data."}
+              </span>
+            </>
+          ) : (
+            <strong>Back online — cloud available again</strong>
+          )}
+        </div>
+      )}
 
       <header className="topbar">
         <a className="mark" href="/" aria-label="Lightout home">
@@ -181,6 +284,31 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      <section className="how" aria-label="How it works">
+        <ol className="steps">
+          <li>
+            <span className="step-n">1</span> Paste your notes
+          </li>
+          <li aria-hidden="true" className="step-arrow">
+            →
+          </li>
+          <li>
+            <span className="step-n">2</span> AI runs on your laptop
+          </li>
+          <li aria-hidden="true" className="step-arrow">
+            →
+          </li>
+          <li>
+            <span className="step-n">3</span> Cloud only when needed
+          </li>
+        </ol>
+        {status === "unsupported" && (
+          <p className="how-note">
+            Offline mode needs <strong>Chrome on desktop (v139+)</strong>. Other browsers still work via the cloud.
+          </p>
+        )}
+      </section>
 
       <section className="hero">
         <p className="eyebrow">
@@ -226,17 +354,16 @@ export default function App() {
         </svg>
       </section>
 
-      {status !== "available" && status !== "checking" && (
-        <section className={`panel onboarding ${status === "unsupported" || status === "unavailable" ? "is-unsupported" : ""}`}>
-          {status === "unsupported" || status === "unavailable" ? (
+      {status !== "available" && status !== "checking" && status !== "unsupported" && (
+        <section className={`panel onboarding ${status === "unavailable" ? "is-unsupported" : ""}`}>
+          {status === "unavailable" ? (
             <div className="onb-grid">
               <div className="onb-num">⌁</div>
               <div>
                 <h2>Cloud mode on this browser</h2>
                 <p>
-                  Offline mode needs <strong>Chrome desktop v139+</strong> with the on-device Prompt API enabled
-                  {status === "unavailable" ? ", on a device that meets Gemini Nano's hardware requirements" : ""}. Everything
-                  below still works for you through the cloud while you're online.
+                  This device can't run the offline brain (Gemini Nano needs Chrome desktop v139+ on hardware that meets its
+                  requirements). Everything below still works for you through the cloud while you're online.
                 </p>
               </div>
             </div>
@@ -277,6 +404,12 @@ export default function App() {
               <span className={`save ${saved ? "" : "is-saving"}`}>{saved ? "Saved" : "Saving"}</span>
             </span>
           </div>
+          <div className="sample-row">
+            <button type="button" className="sample-btn" onClick={loadSample} disabled={!!busy}>
+              <span aria-hidden="true">✦</span> Try with sample notes
+            </button>
+            <span className="sample-meta">ECO 101 · demand, supply &amp; elasticity</span>
+          </div>
           <textarea
             id="notes"
             value={notes}
@@ -292,15 +425,38 @@ export default function App() {
 
         <nav className="actions" aria-label="Study tools">
           {Object.entries(TASKS).map(([key, t], i) => (
-            <button key={key} style={{ "--i": i }} onClick={() => handleTask(key)} disabled={!!busy} className={busy === key ? "is-busy" : ""}>
-              <span className="idx">0{i + 1}</span>
-              <span className="name">{busy === key ? "Thinking…" : t.label}</span>
+            <button
+              key={key}
+              style={{ "--i": i }}
+              onClick={() => handleTask(key)}
+              disabled={!!busy}
+              aria-busy={busy === key}
+              className={busy === key ? "is-busy" : ""}
+            >
+              <span className="idx">{busy === key ? <span className="btn-spinner" aria-hidden="true" /> : `0${i + 1}`}</span>
+              <span className="name">{busy === key ? (result?.streaming ? "Writing…" : "Thinking…") : t.label}</span>
               <span className="desc">{TASK_BLURB[key]}</span>
               <span className="arrow" aria-hidden="true">→</span>
             </button>
           ))}
         </nav>
       </main>
+
+      <div className="stats" aria-live="polite">
+        <span className="stat device">
+          <b>{stats.device}</b> on-device
+        </span>
+        <span className="sep" aria-hidden="true">·</span>
+        <span className="stat cloud">
+          <b>{stats.cloud}</b> cloud
+        </span>
+        <span className="stats-label">requests on this device</span>
+        {stats.device + stats.cloud > 0 && (
+          <button type="button" className="reset" onClick={resetStats}>
+            reset
+          </button>
+        )}
+      </div>
 
       {error && (
         <p className="error" role="alert">
@@ -309,7 +465,7 @@ export default function App() {
         </p>
       )}
 
-      {busy && (
+      {busy && !result?.streaming && (
         <section className="panel loading" aria-live="polite">
           <div className="pulse" /> Working on {TASKS[busy].label.toLowerCase()}…
         </section>
@@ -319,14 +475,23 @@ export default function App() {
         <section className="panel result" ref={resultRef}>
           <div className="result-head">
             <h2>{TASKS[result.taskKey].label}</h2>
-            <SourceBadge source={result.source} />
+            {result.streaming ? (
+              <span className="badge streaming">
+                <span className="dot" /> Generating…
+              </span>
+            ) : (
+              <SourceBadge source={result.source} ms={result.ms} />
+            )}
           </div>
           {result.taskKey === "flashcards" ? (
             <Flashcards cards={result.data.cards} />
           ) : result.taskKey === "quiz" ? (
             <Quiz questions={result.data.questions} />
           ) : (
-            <div className="prose">{result.data}</div>
+            <div className={`prose ${result.streaming ? "is-streaming" : ""}`}>{result.data}</div>
+          )}
+          {!result.streaming && result.source === InferenceSource.ON_DEVICE && (
+            <p className="privacy">🔒 Your notes never left this device.</p>
           )}
           <p className="hint route-note">{result.reason}</p>
         </section>
@@ -349,18 +514,19 @@ export default function App() {
   );
 }
 
-function SourceBadge({ source }) {
+function SourceBadge({ source, ms }) {
+  const time = ms != null ? ` · ${formatSecs(ms)}` : "";
   if (source === InferenceSource.ON_DEVICE)
     return (
-      <span className="badge device">
-        <span className="dot" /> Ran on your device
+      <span className="badge device" title="Ran on your device with Gemini Nano">
+        🔒 On device{time}
       </span>
     );
   if (source === InferenceSource.IN_CLOUD)
     return (
-      <span className="badge cloud">
-        <span className="dot" /> Ran in the cloud
+      <span className="badge cloud" title="Ran in the cloud with Gemini">
+        ☁️ Cloud{time}
       </span>
     );
-  return null;
+  return ms != null ? <span className="badge">⏱ {formatSecs(ms)}</span> : null;
 }

@@ -1,10 +1,15 @@
 import { useEffect, useState } from "react";
 import { getPack } from "../lib/db.js";
+import { PackQuiz, PackAsk } from "./PackStudy.jsx";
 
-const TABS = [{ key: "read", label: "Read" }];
+const TABS = [
+  { key: "read", label: "Read" },
+  { key: "quiz", label: "Quiz" },
+  { key: "ask", label: "Ask" },
+];
 
-/** One pack: Read mode (no AI needed). Quiz and Ask arrive with Blackout Study Mode. */
-export default function PackView({ packId, onBack }) {
+/** One pack in Blackout Study Mode: Read (no AI), adaptive Quiz, Ask (on-device first). */
+export default function PackView({ packId, online, onStatus, onBack }) {
   const [pack, setPack] = useState(undefined);
   const [tab, setTab] = useState("read");
 
@@ -47,6 +52,8 @@ export default function PackView({ packId, onBack }) {
         </div>
       </div>
       {tab === "read" && <ReadMode pack={pack} />}
+      {tab === "quiz" && <PackQuiz pack={pack} online={online} onStatus={onStatus} />}
+      {tab === "ask" && <PackAsk pack={pack} online={online} onStatus={onStatus} />}
     </>
   );
 }

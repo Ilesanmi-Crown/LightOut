@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { listPacks, getQuestionStats } from "../lib/db.js";
+import SavingsCard from "../components/SavingsCard.jsx";
 
 /** Packs home: every pack saved on this device (IndexedDB), newest first. */
 export default function PackLibrary({ online, refreshKey, onOpen, onNew, children }) {
@@ -40,6 +41,7 @@ export default function PackLibrary({ online, refreshKey, onOpen, onNew, childre
         </div>
       </div>
 
+      <SavingsCard />
       {children}
 
       {packs === null ? (

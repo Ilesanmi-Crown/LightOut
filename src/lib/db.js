@@ -12,6 +12,12 @@ local.version(1).stores({
   meta: "key",
 });
 
+// v2: log of every AI call for the device-vs-cloud comparison.
+// call: { id, at, source: "device" | "cloud" | "unknown", task, mode, ms, requestBytes, responseBytes }
+local.version(2).stores({
+  calls: "++id, at, source",
+});
+
 export async function listPacks() {
   return local.packs.orderBy("updatedAt").reverse().toArray();
 }

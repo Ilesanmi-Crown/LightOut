@@ -8,6 +8,7 @@ import { ai } from "./firebase.js";
 import { getConfig } from "./lib/config.js";
 import { addSavings } from "./lib/savings.js";
 import { formatRawError, setLastAIError } from "./lib/diagnostics.js";
+import { recordCall } from "./lib/calls.js";
 
 export { InferenceMode, InferenceSource };
 
@@ -251,9 +252,15 @@ export async function runPrompt(args) {
   }
 }
 
-async function runPromptInner({ taskKey, parts, mode, onText }) {
+/**
+ * Options: `label` names the call in the benchmark log (defaults to taskKey);
+ * `countSavings: false` keeps tests/benchmarks out of the data-saved total.
+ * Returns { text, source, ms, requestBytes, responseBytes }.
+ */
+async function runPromptInner({ taskKey, parts, mode, onText, label, countSavings = true }) {
   const model = getModel(taskKey, mode);
   const task = ALL_TASKS[taskKey];
+  const start = performance.now();
   let response;
   let text = "";
 
@@ -277,11 +284,22 @@ async function runPromptInner({ taskKey, parts, mode, onText }) {
     text = response.text();
   }
 
+  const ms = performance.now() - start;
   const source = response?.inferenceSource ?? fallbackSource(mode);
-  if (source === InferenceSource.ON_DEVICE) {
-    addSavings({ requestBytes: partsBytes(parts), responseBytes: utf8Bytes(text) }).catch(() => {});
+  const requestBytes = partsBytes(parts);
+  const responseBytes = utf8Bytes(text);
+  if (source === InferenceSource.ON_DEVICE && countSavings) {
+    addSavings({ requestBytes, responseBytes }).catch(() => {});
   }
-  return { text, source };
+  recordCall({
+    source: source === InferenceSource.ON_DEVICE ? "device" : source === InferenceSource.IN_CLOUD ? "cloud" : "unknown",
+    task: label || taskKey,
+    mode,
+    ms,
+    requestBytes,
+    responseBytes,
+  });
+  return { text, source, ms, requestBytes, responseBytes };
 }
 
 export async function runTask({ taskKey, notes, image, mode, onText }) {

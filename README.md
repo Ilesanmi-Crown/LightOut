@@ -121,10 +121,11 @@ Automatic: every push to `main` runs `.github/workflows/deploy.yml`. Add these *
 | Secret | Value |
 |---|---|
 | `FIREBASE_SERVICE_ACCOUNT` | Service-account JSON (`firebase init hosting:github` creates it) |
-| `FIREBASE_PROJECT_ID` | Your project ID |
-| `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID` | Web app config |
+| `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID` | Web app config (`VITE_FIREBASE_PROJECT_ID` is also the deploy target) |
 | `VITE_RECAPTCHA_SITE_KEY` | reCAPTCHA v3 site key |
 | `VITE_CLOUD_MODEL` *(optional)* | Override the cloud model |
+
+`VITE_APPCHECK_DEBUG_TOKEN` may exist as a secret but is **intentionally not passed to the production build**. A debug token baked into the public bundle would let anyone bypass App Check. It's for local development only.
 
 Add your Hosting domain (`<project>.web.app`) to the reCAPTCHA key's allowed domains.
 

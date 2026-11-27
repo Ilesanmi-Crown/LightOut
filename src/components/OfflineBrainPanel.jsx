@@ -1,28 +1,12 @@
-import { useState } from "react";
-import { downloadOfflineBrain } from "../ai.js";
+import { startDownload, useDownload } from "../lib/download.js";
 
 /** Onboarding: download Gemini Nano while there's Wi-Fi. Hidden once ready or unsupported. */
 export default function OfflineBrainPanel({ status, online, onRefresh }) {
-  const [progress, setProgress] = useState(null);
-  const [error, setError] = useState("");
+  const { progress, error } = useDownload();
   if (status === "available" || status === "checking" || status === "unsupported") return null;
 
   const pct = progress === null ? 0 : Math.round(progress * 100);
   const canDownload = online && (status === "downloadable" || status === "downloading") && progress === null;
-
-  async function handleDownload() {
-    setError("");
-    setProgress(0);
-    try {
-      await downloadOfflineBrain((p) => setProgress(p));
-      setProgress(1);
-    } catch (e) {
-      setError(`Couldn't download the offline brain: ${e?.message || e}`);
-    } finally {
-      await onRefresh();
-      setTimeout(() => setProgress(null), 1200);
-    }
-  }
 
   return (
     <section className={`panel onboarding ${status === "unavailable" ? "is-unsupported" : ""}`}>
@@ -47,9 +31,9 @@ export default function OfflineBrainPanel({ status, online, onRefresh }) {
             <h2>Charge up before the next outage.</h2>
             <p>
               Download the offline brain (Gemini Nano, a one-time download of a few GB) while you have Wi-Fi. After that,
-              marking, answers and quick tools work with zero data.
+              marking, answers and quick tools work with zero data. <a href="#/brain">Manage the offline brain →</a>
             </p>
-            <button className="cta" onClick={handleDownload} disabled={!canDownload}>
+            <button className="cta" onClick={() => startDownload(onRefresh)} disabled={!canDownload}>
               <span>{progress !== null ? "Downloading…" : "Download the offline brain"}</span>
               <span className="arrow" aria-hidden="true">↓</span>
             </button>

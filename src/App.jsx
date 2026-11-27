@@ -13,6 +13,8 @@ import QuickTools from "./screens/QuickTools.jsx";
 import NewPack from "./screens/NewPack.jsx";
 import PackLibrary from "./screens/PackLibrary.jsx";
 import PackView from "./screens/PackView.jsx";
+import OfflineBrain from "./screens/OfflineBrain.jsx";
+import { useDownload } from "./lib/download.js";
 
 const BRAIN_SHORT = {
   checking: "Checking",
@@ -26,7 +28,7 @@ const BRAIN_SHORT = {
 // ---------- tiny hash router: #/packs, #/new, #/tools, #/pack/<id> ----------
 function parseHash() {
   const [, name, id] = (window.location.hash || "").split("/");
-  if (name === "new" || name === "tools") return { name };
+  if (name === "new" || name === "tools" || name === "brain") return { name };
   if (name === "pack" && id) return { name: "pack", id: decodeURIComponent(id) };
   return { name: "packs" };
 }
@@ -51,6 +53,7 @@ const NAV = [
   { key: "packs", label: "Packs" },
   { key: "new", label: "New pack" },
   { key: "tools", label: "Quick tools" },
+  { key: "brain", label: "Offline brain" },
 ];
 
 export default function App() {
@@ -60,6 +63,7 @@ export default function App() {
   const [status, setStatus] = useState("checking");
   const [libraryKey, setLibraryKey] = useState(0);
   const [syncState, setSyncState] = useState(null); // null | "syncing" | "synced" | "local"
+  const { progress: downloadProgress } = useDownload();
 
   const refreshStatus = useCallback(async () => {
     setStatus(await getOnDeviceStatus());
@@ -131,13 +135,13 @@ export default function App() {
               {online ? "Online" : "Offline"}
             </span>
           </div>
-          <div className={`reading ${brainTone}`}>
+          <a href="#/brain" className={`reading chip-link ${brainTone}`} title="Manage the offline brain">
             <span className="k">Offline brain</span>
             <span className="v">
               <span className="dot" />
-              {BRAIN_SHORT[status] || status}
+              {downloadProgress !== null ? `Downloading ${Math.round(downloadProgress * 100)}%` : BRAIN_SHORT[status] || status}
             </span>
-          </div>
+          </a>
         </div>
       </header>
 
@@ -217,6 +221,7 @@ export default function App() {
         )}
         {route.name === "pack" && <PackView packId={route.id} online={online} onStatus={setStatus} onBack={() => go("packs")} />}
         {route.name === "tools" && <QuickTools online={online} onStatus={setStatus} />}
+        {route.name === "brain" && <OfflineBrain status={status} online={online} onRefresh={refreshStatus} />}
       </div>
 
       <footer className="footer">

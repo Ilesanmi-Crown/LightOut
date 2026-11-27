@@ -732,3 +732,50 @@ textarea:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 6
 }
 .debug-pre.bad { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); color: #ffd9d4; }
 .debug summary { cursor: pointer; font: 0.78rem/1.4 var(--mono); color: var(--muted); }
+
+/* ---------- Offline Brain screen ---------- */
+.reading.chip-link { color: inherit; text-decoration: none; transition: background var(--t-sm); }
+.reading.chip-link .k::after { content: " →"; }
+.brain-status, .compare, .storage { display: grid; gap: 14px; }
+.brain-state { display: flex; align-items: center; gap: 16px; }
+.brain-icon {
+  display: grid; place-items: center; flex: none; width: 56px; height: 56px; border-radius: 16px;
+  font-size: 1.7rem; background: var(--ink-3); border: 1px solid var(--line-2);
+}
+.brain-status.is-ready { border-color: color-mix(in srgb, var(--volt) 40%, var(--line)); }
+.brain-status.is-ready .brain-icon { background: color-mix(in srgb, var(--volt) 12%, var(--ink-3)); }
+.brain-status.is-unsupported { border-color: color-mix(in srgb, var(--amber) 35%, var(--line)); }
+.brain-state h3 { margin: 0 0 4px; font: 750 clamp(1.4rem, 3.6vw, 2rem)/1.05 var(--display); letter-spacing: -0.025em; }
+.brain-state p { margin: 0; color: var(--muted); }
+.brain-download { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.brain-download .offline-note { padding: 8px 12px; }
+.brain-status .progress { max-width: none; margin: 0; }
+.brain-test { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 0.92rem; }
+.brain-test .ghost { padding: 8px 14px; }
+.compare h3, .storage h3 { margin: 0; font: 700 1.2rem/1.1 var(--display); letter-spacing: -0.02em; }
+.compare-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px; }
+.compare-grid, .bench-result { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.compare-side, .bench-side { display: grid; gap: 4px; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--line); background: var(--ink-3); font-size: 0.88rem; color: var(--muted); }
+.compare-side.device, .bench-side.device { border-color: color-mix(in srgb, var(--volt) 35%, var(--line)); }
+.compare-side.cloud, .bench-side.cloud { border-color: color-mix(in srgb, var(--cloud) 35%, var(--line)); }
+.compare-label { font: 600 0.72rem/1 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--paper); }
+.compare-time { font: 800 clamp(1.5rem, 4vw, 2.1rem)/1.1 var(--display); letter-spacing: -0.03em; color: var(--paper); }
+.device .compare-time { color: var(--volt); }
+.cloud .compare-time { color: var(--cloud); }
+.compare-saved { margin: 0; font-size: 0.98rem; }
+.compare-saved b { color: var(--volt); }
+.compare-saved span { color: var(--muted); }
+.bench { display: grid; gap: 12px; padding-top: 14px; border-top: 1px solid var(--line); }
+.bench-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.storage-big { margin: 0; font-size: 1.05rem; }
+.storage-big b { font-family: var(--display); font-size: 1.3rem; }
+.storage .hint { margin: 0; }
+@media (hover: hover) and (pointer: fine) {
+  .reading.chip-link:hover { background: var(--ink-3); }
+}
+@media (max-width: 600px) {
+  .compare-grid, .bench-result { grid-template-columns: 1fr 1fr; }
+  .compare-side, .bench-side { padding: 12px; }
+  .mainnav a { font-size: 0.78rem; padding: 9px 4px; }
+  .brain-icon { width: 46px; height: 46px; font-size: 1.4rem; }
+}

@@ -4,6 +4,7 @@ import { addOfflineAnswer } from "../lib/savings.js";
 import { pickRound, roundFocus, markAnswer, markInCloud, buildAskContext, askPrompt } from "../lib/study.js";
 import { runPrompt, prepareRoute, friendlyError, InferenceMode } from "../ai.js";
 import CloudRetry from "../components/CloudRetry.jsx";
+import ErrorNote from "../components/ErrorNote.jsx";
 import { SourceBadge, PrivacyLine } from "../components/AIMeta.jsx";
 
 const ROUND_SIZE = 10;
@@ -38,7 +39,7 @@ export function PackQuiz({ pack, online, onStatus }) {
   }
 
   async function handleReset() {
-    if (!window.confirm("Reset your progress on this pack? Your missed-question history will be cleared.")) return;
+    if (!window.confirm("Reset your progress on this pack?")) return;
     await resetQuestionStats(pack.id);
     newRound();
   }
@@ -79,7 +80,7 @@ export function PackQuiz({ pack, online, onStatus }) {
           <h3>
             {score}/{round.length} correct
           </h3>
-          <p>{score === round.length ? "Perfect round. You're exam-ready on these." : "Missed questions come back first next round, until you get them right."}</p>
+          <p>{score === round.length ? "Perfect round!" : "Missed questions come back first."}</p>
           <div className="row-actions">
             <button className="cta" onClick={newRound}>
               <span>Next round</span>
@@ -134,7 +135,7 @@ function QuestionCard({ q, section, prevWrong, online, onStatus, onAnswered, onN
       const res = await markAnswer({ question: q, answer, online });
       if (res.status) onStatus(res.status);
       if (res.error) {
-        setError(`${res.error} You can still compare with the model answer and mark yourself.`);
+        setError(`${res.error} Or mark yourself below.`);
         setShowModel(true);
         return;
       }
@@ -143,7 +144,8 @@ function QuestionCard({ q, section, prevWrong, online, onStatus, onAnswered, onN
       onAnswered(res.mark.verdict === "correct");
     } catch (e) {
       console.error(e);
-      setError(`${friendlyError(e, { online })} You can still compare with the model answer and mark yourself.`);
+      const fe = friendlyError(e, { online });
+      setError({ ...fe, text: `${fe.text} Or mark yourself below.` });
       setShowModel(true);
     } finally {
       setMarking(false);
@@ -184,7 +186,7 @@ function QuestionCard({ q, section, prevWrong, online, onStatus, onAnswered, onN
             value={answer}
             onChange={(e) => setAnswer(e.target.value)}
             rows={4}
-            placeholder="Type your answer in your own words…"
+            placeholder="Your answer, in your own words…"
             disabled={marking || answered}
           />
           {!answered && (
@@ -195,7 +197,6 @@ function QuestionCard({ q, section, prevWrong, online, onStatus, onAnswered, onN
                   {marking ? <span className="btn-spinner" /> : "✓"}
                 </span>
               </button>
-              <span className="hint inline">{online ? "Marked on your device when it can" : "Marked on your device"}</span>
             </div>
           )}
         </div>
@@ -240,10 +241,7 @@ function QuestionCard({ q, section, prevWrong, online, onStatus, onAnswered, onN
 
 
       {error && (
-        <p className="error" role="alert">
-          <span aria-hidden="true">!</span>
-          {error}
-        </p>
+        <ErrorNote error={error} />
       )}
 
       {answered && (
@@ -311,7 +309,7 @@ export function PackAsk({ pack, online, onStatus }) {
             id="ask-q"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder="e.g. Why do governments tax fuel?"
+            placeholder="Ask a question about this pack…"
             maxLength={400}
             disabled={busy}
           />
@@ -329,14 +327,10 @@ export function PackAsk({ pack, online, onStatus }) {
             </button>
           ))}
         </div>
-        <p className="hint">Answers come only from this pack&apos;s top matching sections, on your device when it can.</p>
       </form>
 
       {error && (
-        <p className="error" role="alert">
-          <span aria-hidden="true">!</span>
-          {error}
-        </p>
+        <ErrorNote error={error} />
       )}
 
       {busy && !answer && (
@@ -366,7 +360,7 @@ export function PackAsk({ pack, online, onStatus }) {
             {!answer.streaming && <PrivacyLine source={answer.source} />}
           </CloudRetry>
           <p className="hint route-note">
-            {answer.matched ? "From" : "No close match. Searched"}: {answer.sections.map((s) => s.title).join(" · ")}
+            {answer.matched ? "From" : "Closest sections"}: {answer.sections.map((s) => s.title).join(" · ")}
           </p>
         </section>
       )}

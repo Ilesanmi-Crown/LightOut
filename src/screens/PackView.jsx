@@ -28,8 +28,7 @@ export default function PackView({ packId, online, onStatus, onBack }) {
   if (pack === null)
     return (
       <section className="panel empty">
-        <h3>Pack not found</h3>
-        <p>It may have been deleted on this device.</p>
+        <h3>Pack not found.</h3>
         <button className="ghost" onClick={onBack}>
           ← Back to packs
         </button>
@@ -46,13 +45,13 @@ export default function PackView({ packId, online, onStatus, onBack }) {
         <h2>{pack.title}</h2>
         {pack.summary && <p className="pack-summary">{pack.summary}</p>}
         <div className="pack-actions">
-          <button className="ghost" onClick={() => exportPack(pack)} title="Save as a .lightout.json file to share over Bluetooth or a flash drive">
-            ⇡ Export to share
+          <button className="ghost" onClick={() => exportPack(pack)} title="Saves a file you can send by Bluetooth or flash drive">
+            ⇡ Share pack
           </button>
           <button
             className="ghost danger"
             onClick={async () => {
-              if (!window.confirm(`Delete "${pack.title}" from this device${navigator.onLine ? " and your synced copy" : ""}?`)) return;
+              if (!window.confirm(`Delete "${pack.title}"? This can't be undone.`)) return;
               await deletePack(pack.id);
               removeRemotePack(pack.id);
               onBack();

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { downloadOfflineBrain } from "../ai.js";
 import { formatRawError } from "./diagnostics.js";
 
-let state = { progress: null, error: "" }; // progress: null | 0..1
+let state = { progress: null, error: null }; // progress: null | 0..1
 const listeners = new Set();
 
 function set(next) {
@@ -15,12 +15,12 @@ function set(next) {
 /** Must be called from a user gesture (button click). */
 export async function startDownload(onDone) {
   if (state.progress !== null) return;
-  set({ progress: 0, error: "" });
+  set({ progress: 0, error: null });
   try {
     await downloadOfflineBrain((p) => set({ progress: p }));
     set({ progress: 1 });
   } catch (e) {
-    set({ error: `Couldn't download the offline brain.\n${formatRawError(e)}` });
+    set({ error: { text: "Download didn't finish. Check your Wi-Fi and try again.", details: formatRawError(e) } });
   } finally {
     await onDone?.();
     setTimeout(() => set({ progress: null }), 1200);

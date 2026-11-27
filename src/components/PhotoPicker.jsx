@@ -34,7 +34,7 @@ export default function PhotoPicker({ image, onChange, onError }) {
     e.target.value = "";
     if (!file) return;
     if (!ALLOWED.includes(file.type)) {
-      onError("Only JPEG or PNG photos are supported (the on-device model can't read other formats).");
+      onError("Use a JPEG or PNG photo.");
       return;
     }
     try {

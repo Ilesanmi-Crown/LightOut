@@ -6,15 +6,16 @@ import { pushPack } from "../lib/sync.js";
 import { friendlyError } from "../ai.js";
 import { useElapsed } from "../hooks.js";
 import { SourceBadge } from "../components/AIMeta.jsx";
+import ErrorNote from "../components/ErrorNote.jsx";
 import { SAMPLE_NOTES } from "../sampleNotes.js";
 
-const KIND_LABEL = { pdf: "PDF", docx: "DOCX", txt: "TXT", image: "Photo" };
+const KIND_LABEL = { pdf: "PDF", docx: "Word", txt: "Text", image: "Photo" };
 
 const STAGES = [
   { key: "reading", label: "Reading your files" },
-  { key: "uploading", label: "Sending to Gemini in the cloud" },
-  { key: "building", label: "Writing sections and the question bank" },
-  { key: "saving", label: "Saving for offline study" },
+  { key: "uploading", label: "Uploading" },
+  { key: "building", label: "Writing your pack" },
+  { key: "saving", label: "Saving for offline" },
 ];
 
 export default function NewPack({ online, onCreated }) {
@@ -70,11 +71,11 @@ export default function NewPack({ online, onCreated }) {
       return;
     }
     if (!hasContent) {
-      setError("Add some notes, files or photos first.");
+      setError("Add notes, files or photos first.");
       return;
     }
     if (overLimit) {
-      setError(`That's ${formatBytes(totalBytes)} of material. The limit is 15 MB per pack, so remove a file or split it into two packs.`);
+      setError(`That's ${formatBytes(totalBytes)}. Remove a file to get under 15 MB.`);
       return;
     }
     const start = performance.now();
@@ -99,7 +100,7 @@ export default function NewPack({ online, onCreated }) {
       // Our own validation errors (no Firebase error code) get a short explanation;
       // everything from the SDK/network is shown raw.
       const fromSdk = Boolean(e?.code) || /FirebaseError|AIError/.test(e?.name || "");
-      setError(fromSdk ? friendlyError(e, { online: navigator.onLine }) : `The AI's pack didn't come out right: ${e?.message || e}. Please try again.`);
+      setError(fromSdk ? friendlyError(e, { online: navigator.onLine }) : { text: "The pack didn't come out right. Try again.", details: String(e?.message || e) });
     }
   }
 
@@ -109,10 +110,7 @@ export default function NewPack({ online, onCreated }) {
     <>
       <div className="screen-head">
         <h2>New study pack</h2>
-        <p>
-          <strong>Prep with light, study in the dark.</strong> Upload your course materials while you have data. Gemini in the
-          cloud turns them into explanations and a question bank you can study offline.
-        </p>
+        <p>Add your notes, PDFs or photos. We&apos;ll turn them into a pack you can study offline.</p>
       </div>
 
       <section className="panel newpack">
@@ -138,7 +136,7 @@ export default function NewPack({ online, onCreated }) {
             value={pasted}
             onChange={(e) => setPasted(e.target.value)}
             rows={6}
-            placeholder="Paste lecture notes, a handout or a past question here…"
+            placeholder="Paste lecture notes or a handout…"
             disabled={building}
           />
         </div>
@@ -158,7 +156,7 @@ export default function NewPack({ online, onCreated }) {
         >
           <p>
             <strong>Add files or photos</strong>
-            <span>PDF, DOCX, TXT, JPEG, PNG, WebP, HEIC · up to 15 MB per pack</span>
+            <span>PDF, Word, text or photos · up to 15 MB</span>
           </p>
           <div className="dz-actions">
             <button type="button" className="ghost" onClick={() => fileInput.current?.click()} disabled={building}>
@@ -230,7 +228,6 @@ export default function NewPack({ online, onCreated }) {
               {building ? <span className="btn-spinner" /> : "→"}
             </span>
           </button>
-          <span className="badge cloud">☁️ Runs in the cloud</span>
         </div>
         {!online && <p className="offline-note">Building a pack needs internet. Do it while you have light and data.</p>}
 
@@ -247,18 +244,13 @@ export default function NewPack({ online, onCreated }) {
                 )}
               </li>
             ))}
-            <li className="stage-hint">Big packs can take a minute. Keep this tab open.</li>
+            <li className="stage-hint">This can take a minute.</li>
           </ol>
         )}
 
         {built && <SourceBadge source={built.source} ms={built.ms} />}
 
-        {error && (
-          <p className="error" role="alert">
-            <span aria-hidden="true">!</span>
-            {error}
-          </p>
-        )}
+        <ErrorNote error={error} />
       </section>
     </>
   );

@@ -75,8 +75,8 @@ async function imageToJpeg(file) {
     const heic = /\.(heic|heif)$/i.test(file.name) || /hei[cf]/i.test(file.type);
     throw new Error(
       heic
-        ? `This browser can't open HEIC photos ("${file.name}"). Set your phone camera to "Most Compatible" (JPEG), or share the photo as JPEG.`
-        : `Couldn't open "${file.name}" as an image.`
+        ? `Can't open "${file.name}" here. Send it as a JPEG instead.`
+        : `Couldn't open "${file.name}". Try another photo.`
     );
   }
   const w = img.width || img.naturalWidth;
@@ -101,7 +101,7 @@ async function imageToJpeg(file) {
 export async function ingestFile(file) {
   const kind = detectKind(file);
   const base = { id: crypto.randomUUID(), name: file.name, size: file.size, kind };
-  if (!kind) throw new Error(`"${file.name}" isn't supported. Use PDF, DOCX, TXT, JPEG, PNG, WebP or HEIC.`);
+  if (!kind) throw new Error(`"${file.name}" isn't supported. Use a PDF, Word file, text file or photo.`);
 
   if (kind === "txt") {
     const text = await file.text();
@@ -111,7 +111,7 @@ export async function ingestFile(file) {
     const mammoth = await import("mammoth"); // lazy: only loaded when a DOCX is added
     const { value } = await (mammoth.extractRawText || mammoth.default.extractRawText)({ arrayBuffer: await file.arrayBuffer() });
     const text = value.trim();
-    if (!text) throw new Error(`"${file.name}" has no readable text.`);
+    if (!text) throw new Error(`"${file.name}" has no text we can read.`);
     return { ...base, text, payloadBytes: new TextEncoder().encode(text).length };
   }
   if (kind === "pdf") {

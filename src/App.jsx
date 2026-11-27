@@ -107,11 +107,7 @@ export default function App() {
           {banner === "offline" ? (
             <>
               <strong>⚡ No light, no data? Lightout is still working.</strong>
-              <span>
-                {status === "available"
-                  ? "Your packs and offline brain are ready. Everything runs on this device."
-                  : "Your packs still open offline. Download the offline brain next time you're online for AI marking."}
-              </span>
+              {status !== "available" && <span>AI marking needs the offline brain.</span>}
             </>
           ) : (
             <strong>Back online — cloud available again</strong>
@@ -129,13 +125,13 @@ export default function App() {
         </a>
         <div className="meter" role="status" aria-live="polite">
           <div className={`reading ${online ? "ok" : "bad"}`}>
-            <span className="k">Grid</span>
+            <span className="k">Internet</span>
             <span className="v">
               <span className="dot" />
               {online ? "Online" : "Offline"}
             </span>
           </div>
-          <a href="#/brain" className={`reading chip-link ${brainTone}`} title="Manage the offline brain">
+          <a href="#/brain" className={`reading chip-link ${brainTone}`} title="Offline brain: AI that works without internet">
             <span className="k">Offline brain</span>
             <span className="v">
               <span className="dot" />
@@ -153,62 +149,24 @@ export default function App() {
             {n.label}
           </a>
         ))}
-        {syncState && (
-          <span className={`sync-state ${syncState}`} title="Packs sync to your anonymous Firebase account when online">
-            {syncState === "syncing" ? "Syncing…" : syncState === "synced" ? "Synced" : "On this device"}
+        {(syncState === "syncing" || syncState === "synced") && (
+          <span className={`sync-state ${syncState}`} title="Your packs are backed up when you're online">
+            {syncState === "syncing" ? "Backing up…" : "Backed up"}
           </span>
         )}
       </nav>
 
-      <section className="how" aria-label="How it works">
-        <ol className="steps">
-          <li>
-            <span className="step-n">1</span> Prep with light: build a pack in the cloud
-          </li>
-          <li aria-hidden="true" className="step-arrow">
-            →
-          </li>
-          <li>
-            <span className="step-n">2</span> Study in the dark: AI runs on your laptop
-          </li>
-          <li aria-hidden="true" className="step-arrow">
-            →
-          </li>
-          <li>
-            <span className="step-n">3</span> Cloud only when needed
-          </li>
-        </ol>
-        {status === "unsupported" && (
-          <p className="how-note">
-            Offline mode needs <strong>Chrome on desktop (v139+)</strong>. Other browsers still work via the cloud.
-          </p>
-        )}
-      </section>
-
-      {route.name === "packs" && (
-        <section className="hero compact">
-          <h1 aria-label="Prep with light. Study in the dark.">
-            <span className="line" aria-hidden="true">
-              <span>Prep with light.</span>
-            </span>
-            <span className="line" aria-hidden="true">
-              <span>
-                Study in the <em className="flicker">dark</em>.
-              </span>
-            </span>
-          </h1>
-          <p className="lede">
-            Turn your lecture notes, PDFs and photos into a Study Pack while you have data. Then read, quiz yourself and get
-            answers marked on your own laptop when NEPA takes light.
-          </p>
-        </section>
-      )}
-
-      {(route.name === "packs" || route.name === "tools") && <OfflineBrainPanel status={status} online={online} onRefresh={refreshStatus} />}
+      {route.name === "tools" && <OfflineBrainPanel status={status} online={online} />}
 
       <div className="screen" key={route.name + (route.id || "")}>
         {route.name === "packs" && (
-          <PackLibrary online={online} refreshKey={libraryKey} onOpen={(id) => go("pack", id)} onNew={() => go("new")} />
+          <PackLibrary
+            online={online}
+            status={status}
+            refreshKey={libraryKey}
+            onOpen={(id) => go("pack", id)}
+            onNew={() => go("new")}
+          />
         )}
         {route.name === "new" && (
           <NewPack

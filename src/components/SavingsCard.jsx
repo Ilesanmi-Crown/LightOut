@@ -18,13 +18,13 @@ export default function SavingsCard() {
     };
   }, []);
 
-  if (!savings) return null;
+  // Nothing to show until the student has actually studied offline or used on-device AI.
+  if (!savings || (savings.onDeviceCalls === 0 && savings.offlineAnswers === 0)) return null;
   const mb = savings.bytesSaved / (1024 * 1024);
 
   return (
-    <section className="panel savings" aria-label="Data saved by on-device AI">
+    <section className="panel savings" aria-label="Data saved">
       <div className="savings-main">
-        <span className="sec-n">Data saved by studying on-device</span>
         <p className="savings-big">
           Saved <b>{formatMB(savings.bytesSaved)} MB</b> of data <span>(≈ {formatNaira(mb * rate)})</span>
         </p>
@@ -36,11 +36,7 @@ export default function SavingsCard() {
         </div>
         <div>
           <dt>{savings.onDeviceCalls}</dt>
-          <dd>on-device AI calls</dd>
-        </div>
-        <div>
-          <dt>₦{rate}</dt>
-          <dd>per MB (Remote Config)</dd>
+          <dd>AI answers on your device</dd>
         </div>
       </dl>
     </section>

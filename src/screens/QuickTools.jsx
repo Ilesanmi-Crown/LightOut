@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { TASKS, prepareRoute, runTask, friendlyError, ON_DEVICE_CHAR_LIMIT, InferenceSource, InferenceMode } from "../ai.js";
 import CloudRetry from "../components/CloudRetry.jsx";
+import ErrorNote from "../components/ErrorNote.jsx";
 import Flashcards from "../components/Flashcards.jsx";
 import Quiz from "../components/Quiz.jsx";
 import PhotoPicker from "../components/PhotoPicker.jsx";
@@ -92,7 +93,7 @@ export default function QuickTools({ online, onStatus }) {
   async function handleTask(taskKey) {
     setError("");
     if (!notes.trim() && !image) {
-      setError("Paste or type some notes (or add a photo of them) first.");
+      setError("Paste some notes or add a photo first.");
       return;
     }
     const route = await prepareRoute({ chars: notes.length, online });
@@ -103,8 +104,7 @@ export default function QuickTools({ online, onStatus }) {
     }
     setBusy(taskKey);
     setResult(null);
-    const scrollToResult = () =>
-      requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    const scrollToResult = () => requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
     let scrolled = false;
     const start = performance.now();
     const request = { notes, image }; // snapshot so "Retry in cloud" re-sends exactly this
@@ -143,7 +143,7 @@ export default function QuickTools({ online, onStatus }) {
     <>
       <div className="screen-head">
         <h2>Quick tools</h2>
-        <p>Paste any notes for a one-off summary, explanation, flashcards or quiz. Runs on your device when it can.</p>
+        <p>Quick help with any notes, no pack needed.</p>
       </div>
 
       <main className="workspace">
@@ -165,7 +165,7 @@ export default function QuickTools({ online, onStatus }) {
             id="notes"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="Paste or type your lecture notes here. They're saved on this device automatically, so a power cut won't eat them."
+            placeholder="Paste or type your notes here. They're saved automatically."
             rows={12}
           />
           <div className="limit" aria-hidden="true">
@@ -187,34 +187,35 @@ export default function QuickTools({ online, onStatus }) {
               <span className="idx">{busy === key ? <span className="btn-spinner" aria-hidden="true" /> : `0${i + 1}`}</span>
               <span className="name">{busy === key ? (result?.streaming ? "Writing…" : "Thinking…") : t.label}</span>
               <span className="desc">{TASK_BLURB[key]}</span>
-              <span className="arrow" aria-hidden="true">→</span>
+              <span className="arrow" aria-hidden="true">
+                →
+              </span>
             </button>
           ))}
         </nav>
       </main>
 
-      <div className="stats" aria-live="polite">
-        <span className="stat device">
-          <b>{stats.device}</b> on-device
-        </span>
-        <span className="sep" aria-hidden="true">·</span>
-        <span className="stat cloud">
-          <b>{stats.cloud}</b> cloud
-        </span>
-        <span className="stats-label">requests on this device</span>
-        {stats.device + stats.cloud > 0 && (
-          <button type="button" className="reset" onClick={resetStats}>
-            reset
-          </button>
-        )}
-      </div>
-
-      {error && (
-        <p className="error" role="alert">
-          <span aria-hidden="true">!</span>
-          {error}
-        </p>
+      {stats.device + stats.cloud > 0 && (
+        <div className="stats" aria-live="polite">
+          <span className="stat device">
+            <b>{stats.device}</b> on-device
+          </span>
+          <span className="sep" aria-hidden="true">
+            ·
+          </span>
+          <span className="stat cloud">
+            <b>{stats.cloud}</b> cloud
+          </span>
+          <span className="stats-label">answers so far</span>
+          {stats.device + stats.cloud > 0 && (
+            <button type="button" className="reset" onClick={resetStats}>
+              reset
+            </button>
+          )}
+        </div>
       )}
+
+      {error && <ErrorNote error={error} />}
 
       {busy && !result?.streaming && (
         <section className="panel loading" aria-live="polite">

@@ -4,9 +4,17 @@ import { readPackFile, validatePack } from "../lib/packs.js";
 import { pushPack } from "../lib/sync.js";
 import samplePackFile from "../samplePack.json";
 import SavingsCard from "../components/SavingsCard.jsx";
+import ErrorNote from "../components/ErrorNote.jsx";
+import OfflineBrainPanel from "../components/OfflineBrainPanel.jsx";
 
-/** Packs home: every pack saved on this device (IndexedDB), newest first. */
-export default function PackLibrary({ online, refreshKey, onOpen, onNew, children }) {
+const STEPS = [
+  { icon: "📄", label: "Upload your notes" },
+  { icon: "✨", label: "Build a study pack" },
+  { icon: "🔦", label: "Study offline, anywhere" },
+];
+
+/** Packs home: hero + every pack saved on this device, newest first. */
+export default function PackLibrary({ online, status, refreshKey, onOpen, onNew }) {
   const [packs, setPacks] = useState(null);
   const [mastery, setMastery] = useState({});
   const [error, setError] = useState("");
@@ -35,7 +43,7 @@ export default function PackLibrary({ online, refreshKey, onOpen, onNew, childre
       pushPack(pack);
       onOpen(pack.id);
     } catch (e) {
-      setError(`Couldn't import that file: ${e.message}`);
+      setError(`Couldn't import that file. ${e.message}`);
     }
   }
 
@@ -60,61 +68,75 @@ export default function PackLibrary({ online, refreshKey, onOpen, onNew, childre
 
   return (
     <>
-      <div className="screen-head row">
-        <div>
-          <h2>Your study packs</h2>
-          <p>Saved on this device. Open one any time, even with no light and no data.</p>
+      <section className="hero home">
+        <h1 aria-label="Study through every blackout.">
+          <span className="line" aria-hidden="true">
+            <span>Study through</span>
+          </span>
+          <span className="line" aria-hidden="true">
+            <span>
+              every <em className="flicker">blackout</em>.
+            </span>
+          </span>
+        </h1>
+        <p className="lede">Turn your notes into study packs while you have data. Keep learning offline when the light goes.</p>
+        <ol className="hero-steps" aria-label="How it works">
+          {STEPS.map((st, i) => (
+            <li key={st.label}>
+              <span className="hero-step-icon" aria-hidden="true">
+                {st.icon}
+              </span>
+              <span className="hero-step-n">{i + 1}</span>
+              <span>{st.label}</span>
+            </li>
+          ))}
+        </ol>
+        <p className="hero-note">AI runs on your device when it can, in the cloud when it must.</p>
+        <div className="hero-actions">
+          <button className="cta" onClick={loadSample}>
+            <span>Try a sample pack</span>
+            <span className="arrow" aria-hidden="true">→</span>
+          </button>
+          <button className="btn-secondary" onClick={onNew}>
+            Build your own
+          </button>
         </div>
-        <div className="head-actions">
-          <button className="ghost" onClick={loadSample}>
-            ✦ Try a sample pack
+      </section>
+
+      <OfflineBrainPanel status={status} online={online} />
+
+      <div className="library-head">
+        <h2>Your packs</h2>
+        {packs?.length > 0 && (
+          <button className="linkish" onClick={() => importInput.current?.click()} title="Open a pack file shared by a classmate">
+            Import a pack
           </button>
-          <button className="ghost" onClick={() => importInput.current?.click()} title="Open a .lightout.json file from a classmate">
-            ⇣ Import pack
-          </button>
-          <input
-            ref={importInput}
-            type="file"
-            accept=".json,application/json"
-            hidden
-            onChange={(e) => {
-              importFile(e.target.files?.[0]);
-              e.target.value = "";
-            }}
-          />
-          <button className="cta small" onClick={onNew} title={online ? "" : "Building a pack needs internet"}>
-            <span>New pack</span>
-            <span className="arrow" aria-hidden="true">＋</span>
-          </button>
-        </div>
+        )}
+        <input
+          ref={importInput}
+          type="file"
+          accept=".json,application/json"
+          hidden
+          onChange={(e) => {
+            importFile(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
       </div>
 
-      {error && (
-        <p className="error" role="alert">
-          <span aria-hidden="true">!</span>
-          {error}
-        </p>
-      )}
+      <ErrorNote error={error} />
       <SavingsCard />
-      {children}
 
       {packs === null ? (
         <section className="panel loading">
           <div className="pulse" /> Loading your packs…
         </section>
       ) : packs.length === 0 ? (
-        <section className="panel empty">
-          <h3>No packs yet</h3>
-          <p>
-            Build one from your lecture notes, PDFs or photos while you have data, try the sample pack to see Blackout Study
-            Mode straight away, or import a <code>.lightout.json</code> pack a classmate shared over Bluetooth or a flash drive.
-          </p>
-          <div className="row-actions">
-            <button className="cta" onClick={loadSample}>
-              <span>Try a sample pack: ECO 201 Elasticity</span>
-              <span className="arrow" aria-hidden="true">→</span>
-            </button>
-          </div>
+        <section className="empty-line">
+          <p>No packs yet. Got one from a classmate?</p>
+          <button className="ghost" onClick={() => importInput.current?.click()}>
+            Import a pack file
+          </button>
         </section>
       ) : (
         <ul className="pack-grid">

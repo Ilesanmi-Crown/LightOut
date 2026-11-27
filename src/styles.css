@@ -808,3 +808,69 @@ textarea:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 6
 @media (hover: hover) and (pointer: fine) {
   .retry-btn:hover { background: color-mix(in srgb, var(--cloud) 16%, transparent); }
 }
+
+/* ============================================================
+   Clean-up pass: home hero, nudges, empty states, errors
+   ============================================================ */
+.hero.home { padding: clamp(32px, 7vw, 88px) 0 clamp(28px, 4vw, 48px); }
+.hero.home h1 { font-size: clamp(2.6rem, 8.4vw, 6.4rem); }
+.hero.home .lede { margin: clamp(16px, 2.4vw, 24px) 0 0; max-width: 44ch; font-size: clamp(1.05rem, 1.8vw, 1.25rem); }
+.hero-steps {
+  list-style: none; margin: clamp(24px, 3.5vw, 36px) 0 0; padding: 0;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; max-width: 760px;
+  counter-reset: none;
+}
+.hero-steps li {
+  display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 12px; align-items: center;
+  padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--ink-2);
+  font-weight: 600; line-height: 1.25;
+}
+.hero-step-icon { grid-row: 1 / 3; font-size: 1.5rem; }
+.hero-step-n { font: 600 0.66rem/1 var(--mono); color: var(--accent); letter-spacing: 0.1em; }
+.hero-note { margin: 14px 0 0; font-size: 0.88rem; color: var(--muted); }
+.hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: clamp(22px, 3vw, 32px); }
+.btn-secondary {
+  display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 999px;
+  border: 1px solid var(--line-2); background: transparent; color: var(--paper); font-weight: 600;
+  transition: border-color var(--t-sm), background var(--t-sm);
+}
+.btn-secondary:disabled { opacity: 0.45; }
+
+.nudge {
+  display: flex; align-items: center; gap: 10px; margin: 0 0 18px; padding: 12px 16px; border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); background: color-mix(in srgb, var(--accent) 6%, var(--ink-2));
+  color: var(--paper); text-decoration: none; font-size: 0.92rem;
+}
+.nudge b { margin-left: auto; color: var(--accent); white-space: nowrap; }
+
+.library-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 8px 0 14px; }
+.library-head h2 { margin: 0; font: 750 clamp(1.4rem, 3.4vw, 1.9rem)/1.1 var(--display); letter-spacing: -0.025em; }
+.empty-line {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px;
+  padding: 18px 20px; border: 1px dashed var(--line-2); border-radius: var(--r); color: var(--muted);
+}
+.empty-line p { margin: 0; }
+
+.error { align-items: flex-start; }
+.error-body { display: grid; gap: 6px; min-width: 0; }
+.error-body p { margin: 0; white-space: normal; }
+.error-details summary { cursor: pointer; font-size: 0.8rem; color: color-mix(in srgb, #ffd9d4 70%, var(--muted)); width: fit-content; }
+.error-details pre {
+  margin: 6px 0 0; padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--ink) 70%, transparent);
+  font: 0.74rem/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto;
+}
+
+.pack-summary { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.screen-head p { max-width: 52ch; }
+
+@media (hover: hover) and (pointer: fine) {
+  .btn-secondary:hover:not(:disabled) { border-color: var(--paper); background: var(--ink-3); }
+  .nudge:hover { border-color: var(--accent); }
+}
+@media (max-width: 600px) {
+  .hero-steps { grid-template-columns: 1fr; gap: 8px; }
+  .hero-steps li { padding: 12px 14px; }
+  .hero-actions > * { flex: 1 1 100%; justify-content: center; }
+  .empty-line { flex-direction: column; align-items: stretch; text-align: center; }
+}
+.mainnav + .nudge, .mainnav + .debug + .nudge { margin-top: 16px; }

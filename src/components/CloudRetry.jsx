@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { InferenceSource } from "../ai.js";
 import { SourceBadge } from "./AIMeta.jsx";
-import { formatRawError } from "../lib/diagnostics.js";
+import { friendlyError } from "../ai.js";
+import ErrorNote from "./ErrorNote.jsx";
 
 /**
  * Wraps an on-device result. When online, offers "Retry in cloud": re-runs the exact same
@@ -36,7 +37,7 @@ export default function CloudRetry({ source, online, onRetry, renderData, device
             <button type="button" className="retry-btn" onClick={retry}>
               ☁️ Retry in cloud
             </button>
-            <span className="hint inline">Compare with Gemini in the cloud (uses data).</span>
+            <span className="hint inline">Uses data.</span>
           </div>
         )}
       </>
@@ -47,14 +48,14 @@ export default function CloudRetry({ source, online, onRetry, renderData, device
     <>
       <details className="device-answer" open>
         <summary>
-          <span>🔒 On-device answer</span>
+          <span>🔒 Answer from your device</span>
           {deviceSummary}
         </summary>
         <div className="device-answer-body">{children}</div>
       </details>
       <div className="cloud-answer" aria-live="polite">
         <div className="cloud-answer-head">
-          <span>Cloud answer</span>
+          <span>☁️ Answer from the cloud</span>
           {cloud.state === "running" ? (
             <SourceBadge streaming />
           ) : cloud.state === "done" ? (
@@ -62,10 +63,7 @@ export default function CloudRetry({ source, online, onRetry, renderData, device
           ) : null}
         </div>
         {cloud.state === "error" ? (
-          <p className="error" role="alert">
-            <span aria-hidden="true">!</span>
-            {formatRawError(cloud.error)}
-          </p>
+          <ErrorNote error={friendlyError(cloud.error, { online: navigator.onLine })} />
         ) : cloud.data != null ? (
           renderData(cloud.data, { streaming: cloud.state === "running" })
         ) : (

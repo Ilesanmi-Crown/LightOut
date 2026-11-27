@@ -4,7 +4,8 @@ import { testOfflineBrain, runBenchmark } from "../lib/brain.js";
 import { getCallStats, onCallsChange } from "../lib/calls.js";
 import { getSavings, onSavingsChange } from "../lib/savings.js";
 import { getConfig, onConfigChange } from "../lib/config.js";
-import { formatRawError } from "../lib/diagnostics.js";
+import { friendlyError } from "../ai.js";
+import ErrorNote from "../components/ErrorNote.jsx";
 import { formatKB, formatMB, formatNaira, formatSecsShort } from "../lib/format.js";
 
 function stateFor(status, progress) {
@@ -13,12 +14,12 @@ function stateFor(status, progress) {
       key: "downloading",
       icon: "⬇️",
       title: progress !== null ? `Downloading… ${Math.round(progress * 100)}%` : "Downloading…",
-      line: "Chrome is downloading Gemini Nano. Keep this tab open and stay on Wi-Fi.",
+      line: "Keep this tab open and stay on Wi-Fi.",
     };
   if (status === "available")
-    return { key: "ready", icon: "✅", title: "Ready for blackout", line: "Marking, answers and quick tools run on this device with no data." };
+    return { key: "ready", icon: "✅", title: "Ready for blackout", line: "AI works on this device with no data." };
   if (status === "downloadable")
-    return { key: "todo", icon: "☁️", title: "Not downloaded yet", line: "Download it once on Wi-Fi (a few GB) and it works offline from then on." };
+    return { key: "todo", icon: "☁️", title: "Not downloaded yet", line: "Download it once on Wi-Fi (a few GB)." };
   if (status === "unavailable" || status === "unsupported")
     return {
       key: "unsupported",
@@ -26,7 +27,7 @@ function stateFor(status, progress) {
       title: "Not supported on this browser",
       line: "Offline AI needs Chrome on desktop (v139+). The app still works online via the cloud.",
     };
-  return { key: "checking", icon: "…", title: "Checking…", line: "Asking Chrome whether the on-device model is available." };
+  return { key: "checking", icon: "…", title: "Checking…", line: "Checking your browser." };
 }
 
 /** Offline Brain: model manager, self-test, storage, and the device-vs-cloud benchmark. */
@@ -50,7 +51,7 @@ export default function OfflineBrain({ status, online, onRefresh }) {
     (async () => {
       try {
         const est = await navigator.storage?.estimate?.();
-        setStorage(est ? est.usage ?? null : null);
+        setStorage(est ? (est.usage ?? null) : null);
       } catch {
         setStorage(null);
       }
@@ -70,7 +71,7 @@ export default function OfflineBrain({ status, online, onRefresh }) {
     ? "Connect to the internet to compare with the cloud."
     : status !== "available"
       ? st.key === "unsupported"
-        ? "On-device AI isn't supported on this browser, so there's nothing to compare."
+        ? "Not supported on this browser."
         : "Download the offline brain first."
       : "";
 
@@ -94,7 +95,7 @@ export default function OfflineBrain({ status, online, onRefresh }) {
     <>
       <div className="screen-head">
         <h2>Offline brain</h2>
-        <p>Gemini Nano runs inside Chrome on this laptop, so studying keeps working when the light and data are gone.</p>
+        <p>AI that runs on this laptop, with no internet.</p>
       </div>
 
       <section className={`panel brain-status is-${st.key}`}>
@@ -112,7 +113,9 @@ export default function OfflineBrain({ status, online, onRefresh }) {
           <div className="brain-download">
             <button className="cta" onClick={() => startDownload(onRefresh)} disabled={!canDownload}>
               <span>{progress !== null ? "Downloading…" : "Download offline brain"}</span>
-              <span className="arrow" aria-hidden="true">↓</span>
+              <span className="arrow" aria-hidden="true">
+                ↓
+              </span>
             </button>
             {!online && <p className="offline-note">Connect once to download.</p>}
           </div>
@@ -122,15 +125,14 @@ export default function OfflineBrain({ status, online, onRefresh }) {
             <div className="bar" style={{ width: `${progress === null ? 4 : pct}%` }} />
           </div>
         )}
-        {downloadError && (
-          <p className="error" role="alert">
-            <span aria-hidden="true">!</span>
-            {downloadError}
-          </p>
-        )}
+        <ErrorNote error={downloadError} />
 
         <div className="brain-test">
-          <button className="ghost" onClick={handleTest} disabled={test.state === "running" || !supported}>
+          <button
+            className={status === "available" ? "cta small" : "ghost"}
+            onClick={handleTest}
+            disabled={test.state === "running" || !supported}
+          >
             {test.state === "running" ? "Testing…" : "Test offline brain"}
           </button>
           {test.state === "pass" && (
@@ -139,47 +141,51 @@ export default function OfflineBrain({ status, online, onRefresh }) {
             </span>
           )}
           {test.state === "fail" && (
-            <span className="warn-text">✗ Fail{test.reason ? `: ${test.reason}` : test.text ? `: unexpected reply “${test.text}”` : ""}</span>
+            <span className="warn-text">
+              ✗ Fail{test.reason ? `: ${test.reason}` : test.text ? `: unexpected reply “${test.text}”` : ""}
+            </span>
           )}
-          {!supported && status !== "checking" && <span className="hint inline">Needs Chrome on desktop (v139+).</span>}
         </div>
-        {test.state === "fail" && test.error && <pre className="debug-pre bad">{formatRawError(test.error)}</pre>}
+        {test.state === "fail" && test.error && <ErrorNote error={friendlyError(test.error, { online })} />}
       </section>
 
       <section className="panel compare" aria-label="On device vs cloud">
         <div className="compare-head">
           <h3>On device vs cloud</h3>
-          <span className="sec-n">From every AI call on this device</span>
+          <span className="sec-n">Your AI use so far</span>
         </div>
-        <div className="compare-grid">
-          <CompareSide
-            kind="device"
-            label="🔒 On device"
-            avgMs={stats?.device.avgMs}
-            data="0 KB data"
-            calls={stats?.device.calls}
-          />
-          <CompareSide
-            kind="cloud"
-            label="☁️ Cloud"
-            avgMs={stats?.cloud.avgMs}
-            data={stats?.cloud.calls ? `~${formatKB(stats.cloud.avgBytes)} per call` : "– per call"}
-            calls={stats?.cloud.calls}
-          />
-        </div>
-        <p className="compare-saved">
-          Data saved by on-device AI: <b>{formatMB(savedBytes)} MB</b> <span>(≈ {formatNaira(savedNaira)} at ₦{rate}/MB)</span>
-        </p>
+        {stats && stats.device.calls + stats.cloud.calls === 0 ? (
+          <p className="hint">No AI answers yet.</p>
+        ) : (
+          <>
+            <div className="compare-grid">
+              <CompareSide kind="device" label="🔒 On device" avgMs={stats?.device.avgMs} data="0 KB data" calls={stats?.device.calls} />
+              <CompareSide
+                kind="cloud"
+                label="☁️ Cloud"
+                avgMs={stats?.cloud.avgMs}
+                data={stats?.cloud.calls ? `~${formatKB(stats.cloud.avgBytes)} per call` : "– per call"}
+                calls={stats?.cloud.calls}
+              />
+            </div>
+            <p className="compare-saved">
+              Data saved: <b>{formatMB(savedBytes)} MB</b> <span>(≈ {formatNaira(savedNaira)})</span>
+            </p>
+          </>
+        )}
 
         <div className="bench">
           <div className="bench-row">
-            <button className="cta small" onClick={handleBench} disabled={!!benchReason || bench.state === "running"}>
-              <span>{bench.state === "running" ? "Running…" : "Run benchmark"}</span>
-              <span className="arrow" aria-hidden="true">
-                {bench.state === "running" ? <span className="btn-spinner" /> : "⏱"}
-              </span>
+            <button className="btn-secondary" onClick={handleBench} disabled={!!benchReason || bench.state === "running"}>
+              {bench.state === "running" ? (
+                <>
+                  <span className="btn-spinner" aria-hidden="true" /> Running…
+                </>
+              ) : (
+                "⏱ Run benchmark"
+              )}
             </button>
-            <span className="hint inline">{benchReason || "Same short summary, once on device, once in the cloud."}</span>
+            <span className="hint inline">{benchReason || "Times one summary on your device and in the cloud."}</span>
           </div>
           {bench.state === "done" && (
             <div className="bench-result">
@@ -193,13 +199,9 @@ export default function OfflineBrain({ status, online, onRefresh }) {
       <section className="panel storage">
         <h3>Storage</h3>
         <p className="storage-big">
-          Lightout data on this device:{" "}
-          <b>{storage === undefined ? "…" : storage === null ? "unknown" : `${formatMB(storage)} MB`}</b>
+          Lightout data on this device: <b>{storage === undefined ? "…" : storage === null ? "unknown" : `${formatMB(storage)} MB`}</b>
         </p>
-        <p className="hint">
-          Packs, progress and the offline app shell. The AI model itself is managed by Chrome and isn&apos;t counted here (see
-          chrome://on-device-internals).
-        </p>
+        <p className="hint">Chrome stores the AI model separately.</p>
       </section>
     </>
   );
@@ -223,7 +225,7 @@ function BenchSide({ kind, label, r }) {
     <div className={`bench-side ${kind}`}>
       <span className="compare-label">{label}</span>
       {r?.error ? (
-        <pre className="debug-pre bad">{formatRawError(r.error)}</pre>
+        <ErrorNote error={friendlyError(r.error, { online: navigator.onLine })} />
       ) : (
         <>
           <b className="compare-time">{formatSecsShort(r?.ms)}</b>

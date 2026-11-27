@@ -196,19 +196,19 @@ export function chooseRoute({ chars, online }) {
   if (long && online)
     return {
       mode: InferenceMode.ONLY_IN_CLOUD,
-      reason: "Notes are too long for the on-device model, so this went to the cloud.",
+      reason: "Too long for your device, so this used the cloud.",
     };
   if (long && !online)
     return {
-      error: `Your notes are too long to process offline (${chars.toLocaleString()} characters; the offline limit is about ${ON_DEVICE_CHAR_LIMIT.toLocaleString()}). Try a smaller chunk, or wait until you're back online.`,
+      error: `Too long to use offline (${chars.toLocaleString()} of ${ON_DEVICE_CHAR_LIMIT.toLocaleString()} characters). Use a shorter part, or connect to the internet.`,
       reason: "long+offline",
     };
   if (online)
     return {
       mode: InferenceMode.PREFER_ON_DEVICE,
-      reason: "Tries your device first, then falls back to the cloud.",
+      reason: "Your device first, the cloud if needed.",
     };
-  return { mode: InferenceMode.ONLY_ON_DEVICE, reason: "You're offline, so this runs on your device only." };
+  return { mode: InferenceMode.ONLY_ON_DEVICE, reason: "Offline: ran on your device." };
 }
 
 // ---------- Run a task ----------
@@ -232,7 +232,7 @@ function parseJson(text) {
     // Some models wrap JSON in ``` fences; strip and retry.
     const m = text.match(/\{[\s\S]*\}/);
     if (m) return JSON.parse(m[0]);
-    throw new Error("The AI returned something that wasn't valid JSON. Please try again.");
+    throw new Error("The answer came back in the wrong format. Try again.");
   }
 }
 
@@ -330,8 +330,8 @@ export async function prepareRoute({ chars, online }) {
   return {
     error:
       s === "unsupported" || s === "unavailable"
-        ? "You're offline and this browser can't run AI on-device. Reconnect to use the cloud, or open the app in Chrome desktop 139+."
-        : 'You\'re offline and the offline brain isn\'t downloaded yet. Reconnect, then tap "Download the offline brain".',
+        ? "This browser can't use AI offline. Connect to the internet to use the cloud."
+        : "The offline brain isn't downloaded yet. Connect once and download it from Offline brain.",
     status: s,
   };
 }
@@ -347,7 +347,7 @@ function fallbackSource(mode) {
 function normalise(taskKey, obj) {
   if (taskKey === "flashcards") {
     const cards = (obj?.cards || []).filter((c) => c?.front && c?.back);
-    if (!cards.length) throw new Error("No flashcards came back. Try adding more detail to your notes.");
+    if (!cards.length) throw new Error("No flashcards came back. Add more detail to your notes and try again.");
     return { cards };
   }
   const questions = (obj?.questions || [])
@@ -357,22 +357,37 @@ function normalise(taskKey, obj) {
       options: q.options.slice(0, 4),
       answerIndex: Math.min(Math.max(0, Number(q.answerIndex) || 0), Math.min(q.options.length, 4) - 1),
     }));
-  if (!questions.length) throw new Error("No quiz questions came back. Try adding more detail to your notes.");
+  if (!questions.length) throw new Error("No questions came back. Add more detail to your notes and try again.");
   return { questions };
 }
 
 // ---------- Friendly errors ----------
 /**
- * Error text for the UI. Cloud/SDK errors are shown RAW (name, code, message, and
- * customErrorData status/statusText/errorDetails) instead of being guessed at.
- * Only the offline on-device case gets a short hint in front of the raw error.
+ * Error for the UI: one short sentence with what to do next, plus the raw SDK error
+ * (name, code, message, status, errorDetails) for a "Details" disclosure.
+ * Returns { text, details }.
  */
 export function friendlyError(err, { online }) {
-  const raw = formatRawError(err);
+  const details = formatRawError(err);
+  const msg = String(err?.message || "");
+  const status = err?.customErrorData?.status;
+  let text;
   if (!online) {
-    const msg = String(err?.message || "");
-    if (/on-device model is not available|not available in this environment/i.test(msg) || ["api-not-enabled", "unsupported"].includes(err?.code))
-      return `You're offline and the offline brain isn't ready on this device. Reconnect and tap "Download the offline brain" first.\n\n${raw}`;
+    text = /on-device model is not available|not available in this environment/i.test(msg) || ["api-not-enabled", "unsupported"].includes(err?.code)
+      ? "The offline brain isn't ready. Connect once and download it from Offline brain."
+      : "That didn't work offline. Try a shorter piece of text.";
+  } else if (status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(msg)) {
+    text = "The cloud is busy right now. Wait a minute and try again.";
+  } else if (status === 401 || status === 403) {
+    text = "The cloud refused this request. Try again later, or check Details.";
+  } else if (status === 404) {
+    text = "The cloud model wasn't found. Check Details.";
+  } else if (/fetch|network|Failed to fetch|ERR_/i.test(msg)) {
+    text = "Couldn't reach the cloud. Check your data and try again.";
+  } else if (/too large|exceed/i.test(msg)) {
+    text = "That was too much for the AI. Try a shorter piece.";
+  } else {
+    text = "Something went wrong. Try again.";
   }
-  return raw;
+  return { text, details };
 }

@@ -50,6 +50,8 @@ Most AI study tools are cloud-only, so they're useless at exactly the moment a s
 | Mark short answers | 🔒 On-device (`ONLY_ON_DEVICE` offline, `PREFER_ON_DEVICE` online) | Frequent and personal: dozens of small calls per study session. Free, private, works in a blackout. |
 | Ask about this pack | 🔒 On-device first | Same reasons; the retrieved context is capped to fit Nano's window. |
 | Quick tools on long notes (>20k chars) | ☁️ Cloud | Too long for Nano's context window. |
+| Retry in cloud | ☁️ Cloud (`ONLY_IN_CLOUD`), only on tap | The student chooses to spend data for a second opinion; never automatic. |
+| Self-test / benchmark | 🔒 On-device (+ ☁️ cloud for the benchmark) | Proves the offline brain works and shows the speed and data trade-off. |
 
 ### Why on-device?
 - **Privacy:** answers and questions never leave the laptop.
@@ -86,6 +88,48 @@ The original one-off tools are still there under **Quick tools**: **Summarize**,
 - **How it works strip** under the header. On browsers without the on-device model, a note explains that offline mode needs Chrome desktop v139+ and that the cloud still works.
 - **Privacy line** under every on-device result: "🔒 Your notes never left this device."
 - **PWA:** the app shell, fonts and sample pack are precached, so the app opens with no network.
+- **Raw errors:** when a call fails, the app shows the SDK's actual error (name, code, message, and HTTP status, statusText and errorDetails) instead of a guessed summary.
+
+## Offline Brain screen
+
+A model manager for Gemini Nano, reachable from **Offline brain** in the nav or by tapping the **Offline brain** chip in the header (which also shows download progress).
+
+- **One clear state** from `LanguageModel.availability()` (guarded when `LanguageModel` doesn't exist):
+  ✅ **Ready for blackout** · ⬇️ **Downloading… X%** · ☁️ **Not downloaded yet** · ⚠️ **Not supported on this browser** ("Offline AI needs Chrome on desktop (v139+). The app still works online via the cloud.")
+- **Download offline brain:** runs `model.initializeDeviceModel(progress)` from a click, with a progress bar. Disabled offline with "Connect once to download."
+- **Test offline brain:** a tiny `ONLY_ON_DEVICE` prompt ("Reply with the word READY") with pass/fail and the time taken.
+- **Storage:** `navigator.storage.estimate()` → "Lightout data on this device: X MB" (packs, progress and the offline app shell). The AI model itself is managed by Chrome and isn't counted.
+
+### Device vs cloud benchmark
+
+- Every AI call is logged in IndexedDB: where it ran (device/cloud), task, duration (`performance.now()`) and approximate request + response bytes (the last 1,000 calls).
+- A comparison card on the Offline Brain screen shows, for example, **"🔒 On device: avg 1.4s · 0 KB data · N calls"** vs **"☁️ Cloud: avg 2.9s · ~12 KB per call · N calls"**, plus total data saved in MB and ≈ ₦ (`naira_per_mb` from Remote Config).
+- **Run benchmark** sends the same short summarize prompt once with `ONLY_ON_DEVICE` and once with `ONLY_IN_CLOUD`, and shows both times side by side. It's disabled offline or when on-device AI isn't available, with a one-line reason.
+- The self-test and benchmark are logged in the comparison but **not** counted in "data saved", so that figure reflects real studying only.
+
+## Retry in cloud
+
+Every result that ran on-device (Quick tools, short-answer marking and Ask about this pack) shows a small **☁️ Retry in cloud** button when online.
+
+- It re-sends the **exact same request** (same prompt, notes and photo) with `ONLY_IN_CLOUD`, and shows the new answer with the cloud badge and its time.
+- The on-device answer stays above it in a collapsible block, so you can compare the two.
+- It's hidden offline and only runs when tapped. A cloud re-mark doesn't change your quiz progress; only the original mark counts.
+
+## Troubleshooting: `?debug=1`
+
+Open the app with **`?debug=1`** (e.g. `https://<project>.web.app/?debug=1`) to show a diagnostics panel. It contains nothing secret, so it's safe to screenshot.
+
+- Whether `VITE_RECAPTCHA_SITE_KEY` was set in this build (first 6 characters only), whether App Check is initialized, and whether debug-token mode is on
+- The result of `getToken(appCheck, false)`: success with the token length, or the full error (with a 15 s timeout in case the reCAPTCHA script is blocked)
+- `navigator.onLine`, Firebase `projectId` and `appId`, the page origin and the cloud model name
+- A one-click `ONLY_IN_CLOUD` test call, and the raw error from the last failed AI call
+
+| What you see | Likely cause |
+|---|---|
+| Site key "NOT SET in this build" | The `VITE_RECAPTCHA_SITE_KEY` secret isn't reaching the build. |
+| `getToken` fails | The reCAPTCHA key doesn't list your domain, the secret key in App Check doesn't match, or the key isn't reCAPTCHA **v3**. |
+| `getToken` succeeds, but the cloud call fails with 403 | **Not App Check.** Read `errorDetails.reason`: `SERVICE_DISABLED` (enable the Firebase AI Logic / Gemini Developer API), `API_KEY_HTTP_REFERRER_BLOCKED` or `API_KEY_SERVICE_BLOCKED` (the browser API key's restrictions in Google Cloud). |
+| 404 on the model | `cloud_model_name` isn't a valid model. |
 
 ## How hybrid routing works
 
@@ -115,7 +159,7 @@ The interface shows the grid's state. While online it's lit in volt-lime with a 
 src/
   firebase.js            initializeApp, App Check, AI Logic, Auth, Firestore, Remote Config
   ai.js                  task schemas (incl. pack + marking), model cache, routing, runPrompt (stream/JSON), savings bytes
-  App.jsx                shell: banner, status, navigation (#/packs, #/new, #/tools, #/pack/:id), sync on load
+  App.jsx                shell: banner, status chip, navigation (#/packs, #/new, #/tools, #/brain, #/pack/:id), sync on load
   lib/
     config.js            Remote Config defaults + fetchAndActivate
     db.js                Dexie: packs, per-question stats, meta
@@ -124,7 +168,12 @@ src/
     packs.js             build (cloud), validatePack, export/import
     study.js             adaptive quiz order, marking prompt, ask retrieval (12k-char cap)
     savings.js           on-device data savings totals
-  screens/               PackLibrary, NewPack, PackView (Read), PackStudy (Quiz, Ask), QuickTools
+    calls.js             log of every AI call (source, task, time, bytes) for the benchmark
+    brain.js             offline-brain self-test + device-vs-cloud benchmark
+    download.js          shared download progress (header chip, panel, Offline Brain screen)
+    diagnostics.js       raw error formatting + last AI error for ?debug=1
+  components/            CloudRetry, DebugPanel, SavingsCard, OfflineBrainPanel, AIMeta (badges), …
+  screens/               PackLibrary, NewPack, PackView (Read), PackStudy (Quiz, Ask), QuickTools, OfflineBrain
   samplePack.json        bundled ECO 201 Elasticity pack (5 sections, 31 questions)
 firestore.rules          users can only read/write users/{uid}/**
 ```
@@ -173,7 +222,7 @@ Fill in the `VITE_FIREBASE_*` values and `VITE_RECAPTCHA_SITE_KEY`. `.env.local`
 npm install
 npm run dev
 ```
-Click **Download the offline brain** once (it must be a user click; the download is a few GB, so use Wi-Fi).
+Open **Offline brain** and click **Download offline brain** once (it must be a user click; the download is a few GB, so use Wi-Fi). Then tap **Test offline brain** to confirm it replies on-device.
 
 ### 6. Deploy
 Manual:
@@ -195,7 +244,7 @@ Automatic: every push to `main` runs `.github/workflows/deploy.yml` (Hosting onl
 ## How to test (for judges)
 
 **Blackout Study Mode in 60 seconds (no upload needed):**
-1. Open the deployed app in **Chrome desktop 139+** with the flag above enabled, click **Download the offline brain** and wait for **Ready**.
+1. Open the deployed app in **Chrome desktop 139+** with the flag above enabled. Tap the **Offline brain** chip in the header, click **Download offline brain**, wait for **✅ Ready for blackout**, then tap **Test offline brain** (it should pass in about a second).
 2. On **Packs**, tap **✦ Try a sample pack**. The ECO 201 Elasticity pack opens.
 3. **Simulate a NEPA outage:** DevTools → *Network* → **Offline**, or turn off Wi-Fi. The amber banner appears and the UI dims to generator mode.
 4. **Read** works instantly. Open **Quiz**: answer MCQs, then a short-answer question → **Mark my answer**. You get a score, a verdict and feedback with **🔒 On device · 1.2s** and "Your notes never left this device."
@@ -209,6 +258,10 @@ Automatic: every push to `main` runs `.github/workflows/deploy.yml` (Hosting onl
 2. Tap **Build pack**. It runs in the cloud with staged progress, then opens the new pack, saved locally and synced to Firestore.
 3. Go offline and repeat steps 4–6 above on your own pack.
 
+**Device vs cloud (needs data):**
+1. Online, open any on-device result (a marked answer, an Ask answer or a Quick tools summary) and tap **☁️ Retry in cloud**. The cloud answer appears below, with the on-device one kept above for comparison.
+2. Open **Offline brain** → **Run benchmark** to see the same summary timed on-device and in the cloud side by side. The comparison card adds up every call you've made, plus the data saved.
+
 **Quick tools:** tap **Try with sample notes**, then **Summarize** (it streams on-device), then **Flashcards** and **Quiz me**. Paste more than 20,000 characters while offline to see the "too long offline" message; online, the same notes route to **☁️ Cloud**.
 
 ## Limitations
@@ -217,7 +270,9 @@ Automatic: every push to `main` runs `.github/workflows/deploy.yml` (Hosting onl
 - **HEIC** photos are converted with the browser's own decoder (canvas). Safari can decode them; Chrome on Windows and Android usually can't, and Lightout then asks for a JPEG ("Most Compatible" camera setting).
 - PDFs and photos are sent inline (base64), and a pack is capped at 15 MB of material.
 - Packs larger than ~1 MB of JSON stay on the device and aren't synced (Firestore's document limit).
-- The data-savings figure is an estimate: the bytes of the prompt and response that would have gone over the network, excluding HTTP overhead.
+- The data-savings figure and the cloud "KB per call" are estimates: the bytes of the prompt and response, excluding HTTP overhead. Self-test and benchmark calls aren't counted as savings.
+- If Chrome starts downloading the model on its own, the Offline Brain screen shows "Downloading…" without a percentage until you tap **Download offline brain**.
+- The storage figure comes from `navigator.storage.estimate()`, which covers all of Lightout's site data and can be rounded or padded by the browser.
 
 ## License
 

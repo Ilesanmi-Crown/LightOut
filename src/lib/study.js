@@ -1,5 +1,5 @@
 // Blackout Study Mode helpers: adaptive question order, marking prompt, pack Q&A retrieval.
-import { runPrompt, parseJson, prepareRoute } from "../ai.js";
+import { runPrompt, parseJson, prepareRoute, InferenceMode } from "../ai.js";
 
 // ---------- Adaptive quiz ----------
 /**
@@ -60,7 +60,13 @@ export async function markAnswer({ question, answer, online }) {
   const route = await prepareRoute({ chars: parts[0].text.length, online });
   if (route.error) return route;
   const { text, source } = await runPrompt({ taskKey: "mark", parts, mode: route.mode });
-  return { mark: normaliseMark(parseJson(text)), source, reason: route.reason };
+  return { mark: normaliseMark(parseJson(text)), source, reason: route.reason, parts };
+}
+
+/** Re-runs the exact same marking request in the cloud ("Retry in cloud"). */
+export async function markInCloud(parts) {
+  const { text, source, ms } = await runPrompt({ taskKey: "mark", parts, mode: InferenceMode.ONLY_IN_CLOUD });
+  return { data: normaliseMark(parseJson(text)), source, ms };
 }
 
 // ---------- Ask about this pack ----------

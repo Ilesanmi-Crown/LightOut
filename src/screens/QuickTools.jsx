@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { TASKS, prepareRoute, runTask, friendlyError, ON_DEVICE_CHAR_LIMIT, InferenceSource } from "../ai.js";
+import { TASKS, prepareRoute, runTask, friendlyError, ON_DEVICE_CHAR_LIMIT, InferenceSource, InferenceMode } from "../ai.js";
+import CloudRetry from "../components/CloudRetry.jsx";
 import Flashcards from "../components/Flashcards.jsx";
 import Quiz from "../components/Quiz.jsx";
 import PhotoPicker from "../components/PhotoPicker.jsx";
@@ -106,6 +107,8 @@ export default function QuickTools({ online, onStatus }) {
       requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
     let scrolled = false;
     const start = performance.now();
+    const request = { notes, image }; // snapshot so "Retry in cloud" re-sends exactly this
+    const id = Date.now();
     try {
       const { data, source } = await runTask({
         taskKey,
@@ -114,7 +117,7 @@ export default function QuickTools({ online, onStatus }) {
         mode: route.mode,
         // Text tasks stream: show the words as they arrive.
         onText: (text) => {
-          setResult({ taskKey, data: text, source: null, reason: route.reason, streaming: true });
+          setResult({ id, taskKey, data: text, source: null, reason: route.reason, streaming: true, request });
           if (!scrolled) {
             scrolled = true;
             scrollToResult();
@@ -122,7 +125,7 @@ export default function QuickTools({ online, onStatus }) {
         },
       });
       const ms = performance.now() - start;
-      setResult({ taskKey, data, source, reason: route.reason, ms, streaming: false });
+      setResult({ id, taskKey, data, source, reason: route.reason, ms, streaming: false, request });
       recordSource(source);
       if (!scrolled) scrollToResult();
     } catch (e) {
@@ -225,17 +228,30 @@ export default function QuickTools({ online, onStatus }) {
             <h2>{TASKS[result.taskKey].label}</h2>
             <SourceBadge source={result.source} ms={result.ms} streaming={result.streaming} />
           </div>
-          {result.taskKey === "flashcards" ? (
-            <Flashcards cards={result.data.cards} />
-          ) : result.taskKey === "quiz" ? (
-            <Quiz questions={result.data.questions} />
-          ) : (
-            <div className={`prose ${result.streaming ? "is-streaming" : ""}`}>{result.data}</div>
-          )}
-          {!result.streaming && <PrivacyLine source={result.source} />}
+          <CloudRetry
+            key={result.id}
+            source={result.streaming ? null : result.source}
+            online={online}
+            deviceSummary={<SourceBadge source={result.source} ms={result.ms} />}
+            renderData={(data, { streaming }) => renderTaskData(result.taskKey, data, streaming)}
+            onRetry={async (onText) => {
+              const r = await runTask({ taskKey: result.taskKey, ...result.request, mode: InferenceMode.ONLY_IN_CLOUD, onText });
+              recordSource(r.source);
+              return r;
+            }}
+          >
+            {renderTaskData(result.taskKey, result.data, result.streaming)}
+            {!result.streaming && <PrivacyLine source={result.source} />}
+          </CloudRetry>
           <p className="hint route-note">{result.reason}</p>
         </section>
       )}
     </>
   );
+}
+
+function renderTaskData(taskKey, data, streaming) {
+  if (taskKey === "flashcards") return <Flashcards cards={data.cards} />;
+  if (taskKey === "quiz") return <Quiz questions={data.questions} />;
+  return <div className={`prose ${streaming ? "is-streaming" : ""}`}>{data}</div>;
 }

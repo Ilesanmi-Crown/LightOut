@@ -303,9 +303,9 @@ async function runPromptInner({ taskKey, parts, mode, onText, label, countSaving
 }
 
 export async function runTask({ taskKey, notes, image, mode, onText }) {
-  const { text, source } = await runPrompt({ taskKey, parts: buildPrompt(taskKey, notes, image), mode, onText });
+  const { text, source, ms } = await runPrompt({ taskKey, parts: buildPrompt(taskKey, notes, image), mode, onText });
   const data = TASKS[taskKey].json ? normalise(taskKey, parseJson(text)) : text;
-  return { data, source };
+  return { data, source, ms };
 }
 
 const encoder = new TextEncoder();

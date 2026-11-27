@@ -779,3 +779,32 @@ textarea:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 6
   .mainnav a { font-size: 0.78rem; padding: 9px 4px; }
   .brain-icon { width: 46px; height: 46px; font-size: 1.4rem; }
 }
+
+/* ---------- Retry in cloud ---------- */
+.retry-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 14px; }
+.retry-btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--cloud) 45%, var(--line)); background: color-mix(in srgb, var(--cloud) 8%, transparent);
+  color: var(--cloud); font-size: 0.85rem; font-weight: 600; transition: background var(--t-sm);
+}
+.retry-btn.subtle { margin-top: 12px; border-style: dashed; background: none; }
+.device-answer { margin-top: 4px; border: 1px solid color-mix(in srgb, var(--volt) 30%, var(--line)); border-radius: 12px; background: var(--ink); }
+.device-answer > summary {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; cursor: pointer; list-style: none;
+  font: 600 0.75rem/1.2 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--volt);
+}
+.device-answer > summary::-webkit-details-marker { display: none; }
+.device-answer > summary::before { content: "▸"; transition: transform var(--t-sm); }
+.device-answer[open] > summary::before { transform: rotate(90deg); }
+.device-answer > summary .badge { text-transform: none; letter-spacing: 0.02em; }
+.device-answer-body { padding: 0 14px 14px; }
+.device-answer-body .ai-mark { margin-top: 0; }
+.cloud-answer { margin-top: 14px; padding: 14px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--cloud) 40%, var(--line)); background: color-mix(in srgb, var(--cloud) 5%, transparent); }
+.cloud-answer-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.cloud-answer-head > span:first-child { font: 600 0.75rem/1.2 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--cloud); }
+.cloud-answer .badge { text-transform: none; letter-spacing: 0.02em; font-size: 0.8rem; }
+.cloud-answer .ai-mark { margin-top: 0; }
+:root[data-power="off"] .device-answer > summary { color: var(--amber); }
+@media (hover: hover) and (pointer: fine) {
+  .retry-btn:hover { background: color-mix(in srgb, var(--cloud) 16%, transparent); }
+}

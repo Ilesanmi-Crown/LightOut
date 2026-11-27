@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { getQuestionStats, recordAnswer, resetQuestionStats } from "../lib/db.js";
 import { addOfflineAnswer } from "../lib/savings.js";
-import { pickRound, roundFocus, markAnswer, buildAskContext, askPrompt } from "../lib/study.js";
-import { runPrompt, prepareRoute, friendlyError } from "../ai.js";
+import { pickRound, roundFocus, markAnswer, markInCloud, buildAskContext, askPrompt } from "../lib/study.js";
+import { runPrompt, prepareRoute, friendlyError, InferenceMode } from "../ai.js";
+import CloudRetry from "../components/CloudRetry.jsx";
 import { SourceBadge, PrivacyLine } from "../components/AIMeta.jsx";
 
 const ROUND_SIZE = 10;
@@ -201,16 +202,15 @@ function QuestionCard({ q, section, prevWrong, online, onStatus, onAnswered, onN
       )}
 
       {mark && (
-        <div className={`ai-mark ${mark.mark.verdict}`}>
-          <div className="mark-head">
-            <span className="mark-score">
-              <b>{mark.mark.score}</b>/10
-            </span>
-            <span className="mark-verdict">{mark.mark.verdict === "correct" ? "Correct" : mark.mark.verdict === "partly" ? "Partly right" : "Not quite"}</span>
-            <SourceBadge source={mark.source} ms={mark.ms} />
-          </div>
-          <p>{mark.mark.feedback}</p>
-        </div>
+        <CloudRetry
+          source={mark.source}
+          online={online}
+          renderData={(data) => <MarkView mark={data} />}
+          onRetry={() => markInCloud(mark.parts)}
+        >
+          <MarkView mark={mark.mark} source={mark.source} ms={mark.ms} />
+          <PrivacyLine source={mark.source} />
+        </CloudRetry>
       )}
 
       {picked !== null && (
@@ -238,7 +238,6 @@ function QuestionCard({ q, section, prevWrong, online, onStatus, onAnswered, onN
         </div>
       )}
 
-      {mark && <PrivacyLine source={mark.source} />}
 
       {error && (
         <p className="error" role="alert">
@@ -288,9 +287,9 @@ export function PackAsk({ pack, online, onStatus }) {
         taskKey: "ask",
         parts,
         mode: route.mode,
-        onText: (t) => setAnswer({ text: t, streaming: true, sections, matched }),
+        onText: (t) => setAnswer({ id: start, text: t, streaming: true, sections, matched, parts }),
       });
-      setAnswer({ text, source, ms: performance.now() - start, streaming: false, sections, matched });
+      setAnswer({ id: start, text, source, ms: performance.now() - start, streaming: false, sections, matched, parts });
       requestAnimationFrame(() => answerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
     } catch (err) {
       console.error(err);
@@ -352,13 +351,40 @@ export function PackAsk({ pack, online, onStatus }) {
             <h2>Answer</h2>
             <SourceBadge source={answer.source} ms={answer.ms} streaming={answer.streaming} />
           </div>
-          <div className={`prose ${answer.streaming ? "is-streaming" : ""}`}>{answer.text}</div>
-          {!answer.streaming && <PrivacyLine source={answer.source} />}
+          <CloudRetry
+            key={answer.id}
+            source={answer.streaming ? null : answer.source}
+            online={online}
+            deviceSummary={<SourceBadge source={answer.source} ms={answer.ms} />}
+            renderData={(text, { streaming }) => <div className={`prose ${streaming ? "is-streaming" : ""}`}>{text}</div>}
+            onRetry={async (onText) => {
+              const r = await runPrompt({ taskKey: "ask", parts: answer.parts, mode: InferenceMode.ONLY_IN_CLOUD, onText });
+              return { data: r.text, source: r.source, ms: r.ms };
+            }}
+          >
+            <div className={`prose ${answer.streaming ? "is-streaming" : ""}`}>{answer.text}</div>
+            {!answer.streaming && <PrivacyLine source={answer.source} />}
+          </CloudRetry>
           <p className="hint route-note">
             {answer.matched ? "From" : "No close match. Searched"}: {answer.sections.map((s) => s.title).join(" · ")}
           </p>
         </section>
       )}
+    </div>
+  );
+}
+
+function MarkView({ mark, source, ms }) {
+  return (
+    <div className={`ai-mark ${mark.verdict}`}>
+      <div className="mark-head">
+        <span className="mark-score">
+          <b>{mark.score}</b>/10
+        </span>
+        <span className="mark-verdict">{mark.verdict === "correct" ? "Correct" : mark.verdict === "partly" ? "Partly right" : "Not quite"}</span>
+        {source !== undefined && <SourceBadge source={source} ms={ms} />}
+      </div>
+      <p>{mark.feedback}</p>
     </div>
   );
 }

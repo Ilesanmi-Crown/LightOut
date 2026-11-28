@@ -3,6 +3,7 @@ import {
   InferenceMode,
   InferenceSource,
   Schema,
+  ThinkingLevel,
 } from "firebase/ai";
 import { ai } from "./firebase.js";
 import { getConfig } from "./lib/config.js";
@@ -129,28 +130,95 @@ const markSchema = Schema.object({
 });
 
 /** Tasks used by Study Packs (not shown as Quick Tools buttons). */
+// Parallel pack building: a small outline, then section-content and question batches.
+const keyTermsSchema = Schema.array({
+  items: Schema.object({ properties: { term: Schema.string(), definition: Schema.string() } }),
+});
+
+export const outlineSchema = Schema.object({
+  properties: {
+    title: Schema.string(),
+    courseCode: Schema.string(),
+    summary: Schema.string(),
+    sections: Schema.array({ items: Schema.object({ properties: { id: Schema.string(), title: Schema.string() } }) }),
+  },
+});
+
+export const sectionsSchema = Schema.object({
+  properties: {
+    sections: Schema.array({
+      items: Schema.object({
+        properties: {
+          id: Schema.string(),
+          title: Schema.string(),
+          explanation: Schema.string(),
+          keyTerms: keyTermsSchema,
+          workedExample: Schema.string(),
+        },
+      }),
+    }),
+  },
+});
+
+export const questionsSchema = Schema.object({
+  properties: { questions: packSchema.properties.questions },
+});
+
 export const PACK_TASKS = {
-  buildPack: { label: "Build pack", json: true, schema: packSchema, maxOutputTokens: 32768 },
+  // Pack-building calls use the lowest thinking setting the model supports (see thinkingFor()).
+  packOutline: { label: "Pack outline", json: true, schema: outlineSchema, maxOutputTokens: 4096, minimalThinking: true },
+  packSections: { label: "Pack sections", json: true, schema: sectionsSchema, maxOutputTokens: 16384, minimalThinking: true },
+  packQuestions: { label: "Pack questions", json: true, schema: questionsSchema, maxOutputTokens: 16384, minimalThinking: true },
   mark: { label: "Mark answer", json: true, schema: markSchema },
   ask: { label: "Ask about this pack", json: false },
 };
 
 const ALL_TASKS = { ...TASKS, ...PACK_TASKS };
 
+// ---------- Thinking (pack building only) ----------
+// Gemini 2.5 models take a token budget (0 = off on Flash); Gemini 3-series and newer take a level.
+// If the server rejects the setting, pack building retries without it and stops sending it this session.
+let thinkingRejected = false;
+
+export function thinkingFor(modelName) {
+  if (thinkingRejected) return null;
+  if (/gemini-2\.5-pro/i.test(modelName)) return { thinkingBudget: 128 }; // Pro can't fully disable thinking
+  if (/gemini-2\.5/i.test(modelName)) return { thinkingBudget: 0 };
+  if (/gemini-(1|2\.0)/i.test(modelName)) return null; // no thinking on these
+  return { thinkingLevel: ThinkingLevel?.MINIMAL ?? "MINIMAL" };
+}
+
+export function isThinkingConfigError(err) {
+  const status = err?.customErrorData?.status;
+  const msg = `${err?.message || ""} ${JSON.stringify(err?.customErrorData?.errorDetails || "")}`;
+  return (status === 400 || err?.code === "unsupported") && /thinking/i.test(msg);
+}
+
+export function disableThinkingConfig() {
+  thinkingRejected = true;
+}
+
+export function thinkingStatus() {
+  const t = thinkingFor(getConfig().cloud_model_name);
+  return thinkingRejected ? "not supported by this model (skipped)" : t ? JSON.stringify(t) : "not applicable for this model";
+}
+
 // ---------- Model cache (one instance per task + mode + cloud model) ----------
 const modelCache = new Map();
 
 export function getModel(taskKey, mode) {
   const cloudModel = getConfig().cloud_model_name;
-  const key = `${taskKey}:${mode}:${cloudModel}`;
+  const task = ALL_TASKS[taskKey];
+  const thinking = task?.minimalThinking ? thinkingFor(cloudModel) : null;
+  const key = `${taskKey}:${mode}:${cloudModel}:${thinking ? JSON.stringify(thinking) : "-"}`;
   if (modelCache.has(key)) return modelCache.get(key);
 
-  const task = ALL_TASKS[taskKey];
   const generationConfig = task?.json
     ? {
         responseMimeType: "application/json",
         responseSchema: task.schema,
         ...(task.maxOutputTokens ? { maxOutputTokens: task.maxOutputTokens } : {}),
+        ...(thinking ? { thinkingConfig: thinking } : {}),
       }
     : undefined;
   const promptOptions = task?.json

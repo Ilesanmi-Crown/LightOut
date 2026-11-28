@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ACCEPT, MAX_TOTAL_BYTES, formatBytes, detectKind } from "../lib/ingest.js";
 import { createPrepareQueue } from "../lib/prepareQueue.js";
-import { buildPack } from "../lib/packs.js";
-import { putPack } from "../lib/db.js";
-import { pushPack } from "../lib/sync.js";
+import { startBuild } from "../lib/packBuilder.js";
 import { friendlyError } from "../ai.js";
 import { useElapsed } from "../hooks.js";
 import { SourceBadge } from "../components/AIMeta.jsx";
@@ -12,12 +10,16 @@ import { SAMPLE_NOTES } from "../sampleNotes.js";
 
 const KIND_LABEL = { pdf: "PDF", docx: "Word", txt: "Text", image: "Photo" };
 
-const STAGES = [
-  { key: "reading", label: "Preparing your files", activeLabel: "Finishing your files…" },
+// The rest of these steps continue in the pack view (see BuildProgress) once the outline is saved.
+export const BUILD_STAGES = [
+  { key: "reading", label: "Reading files", activeLabel: "Finishing your files…" },
   { key: "uploading", label: "Uploading" },
-  { key: "building", label: "Writing your pack" },
-  { key: "saving", label: "Saving for offline" },
+  { key: "outlining", label: "Outlining" },
+  { key: "sections", label: "Writing sections (0/2)" },
+  { key: "questions", label: "Writing questions (0/2)" },
+  { key: "saved", label: "Saved" },
 ];
+const STAGES = BUILD_STAGES;
 
 // Until a photo is prepared we don't know its final size; resized JPEGs land well under 1 MB.
 const estimateBytes = (it) => (it.status === "ready" ? it.payloadBytes : it.kind === "image" ? Math.min(it.size, 1024 * 1024) : it.size);
@@ -36,7 +38,7 @@ export default function NewPack({ online, onCreated }) {
   const cameraInput = useRef(null);
   const itemsRef = useRef(items);
   itemsRef.current = items;
-  const elapsed = useElapsed(stage === "uploading" || stage === "building");
+  const elapsed = useElapsed(stage === "uploading" || stage === "outlining");
 
   // Background preparation: starts the moment a file is added (max 3 at once).
   const queueRef = useRef(null);
@@ -109,17 +111,21 @@ export default function NewPack({ online, onCreated }) {
         setError(`That's ${formatBytes(finalBytes)}. Remove a file to get under 15 MB.`);
         return;
       }
-      // Step 4: the ONLY_IN_CLOUD pack-building call, using the prepared payloads.
+      // Step 4: the ONLY_IN_CLOUD build, using the prepared payloads. Stage 1 (outline) first;
+      // as soon as it's saved we open the pack, and Stage 2 (4 parallel calls) fills it in.
+      const filesWaitMs = performance.now() - start;
       setStage("uploading");
-      const buildPromise = buildPack({ title, courseCode, pasted, items: ready.map(({ name, payload }) => ({ name, payload })) });
-      // The request is one call; flip to "building" once the upload has had a moment.
-      const t = setTimeout(() => setStage((s) => (s === "uploading" ? "building" : s)), 2500);
-      const { pack, source } = await buildPromise;
+      const t = setTimeout(() => setStage((s) => (s === "uploading" ? "outlining" : s)), 1500);
+      const { pack } = await startBuild({
+        title,
+        courseCode,
+        pasted,
+        items: ready.map(({ name, payload, hash }) => ({ name, payload, hash })),
+        t0: start,
+        filesWaitMs,
+      });
       clearTimeout(t);
-      setStage("saving");
-      await putPack(pack);
-      pushPack(pack); // fire-and-forget sync; IndexedDB is the source of truth
-      setBuilt({ ms: performance.now() - start, source });
+      setBuilt({ ms: performance.now() - start, source: null });
       setStage(null);
       onCreated(pack);
     } catch (e) {
@@ -274,7 +280,7 @@ export default function NewPack({ online, onCreated }) {
                   {i < stageIndex ? "✓" : i === stageIndex ? <span className="btn-spinner" /> : ""}
                 </span>
                 {i === stageIndex && s.activeLabel ? s.activeLabel : s.label}
-                {i === stageIndex && (s.key === "uploading" || s.key === "building") && elapsed > 0 && (
+                {i === stageIndex && (s.key === "uploading" || s.key === "outlining") && elapsed > 0 && (
                   <span className="stage-time">{elapsed}s</span>
                 )}
               </li>

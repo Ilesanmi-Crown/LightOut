@@ -23,15 +23,24 @@ Most AI study tools are cloud-only, so they're useless at exactly the moment a s
  WITH LIGHT + DATA (cloud)                     IN THE DARK (on-device)
  ─────────────────────────                     ───────────────────────
  1. Upload notes, PDFs, DOCX, photos     ┐
- 2. Gemini builds a Study Pack (JSON)    ├──►  4. Read sections, key terms, worked examples   (no AI)
-    5–10 sections + 30+ questions        │     5. Adaptive quiz from the question bank          (no AI)
+ 2. Gemini builds a Study Pack in       ├──►  4. Read sections, key terms, worked examples   (no AI)
+    parallel: outline, then 4 calls      │     5. Adaptive quiz from the question bank          (no AI)
  3. Saved to IndexedDB, synced to        ┘     6. Short answers marked by Gemini Nano           (on-device)
     Firestore                                  7. "Ask about this pack", grounded in the pack   (on-device)
                                                8. Share the pack as a file, no data needed       (no AI)
 ```
 
 1. **New pack:** add a title and course code (e.g. *ECO 201: Elasticity*), then paste text and/or add files: **PDF, DOCX, TXT, JPEG, PNG**, and phone photos (**HEIC/WebP**). DOCX text is extracted in the browser with `mammoth`. Photos are re-encoded to JPEG via canvas (max 1600 px, quality 0.8). A pack is capped at 15 MB with a friendly message.
-2. **Build pack (cloud):** one `ONLY_IN_CLOUD` call with a JSON `responseSchema` returns `{ title, courseCode, summary, sections[{ id, title, explanation, keyTerms, workedExample }], questions[{ id, sectionId, type: "mcq" | "short", question, options, answerIndex, modelAnswer, explanation }] }`. It asks for simple language and Nigerian examples. The button is disabled offline: *"Building a pack needs internet. Do it while you have light and data."*
+2. **Build pack (cloud, in parallel):** all calls are `ONLY_IN_CLOUD` with a JSON `responseSchema`, and each one reuses the same prepared payloads (files are never re-read).
+   - **Stage 1, outline (small and fast):** `{ title, courseCode, summary, sections: [{ id, title }] }` with 5–10 sections.
+   - **Stage 2, four calls at once (`Promise.allSettled`):** *Sections A* and *Sections B* write the explanation, key terms and worked example for the first and second half of the outline. *Questions A* and *Questions B* write questions for each half, splitting `pack_question_count` (Remote Config, default 30) evenly with the same ~70% MCQ / 30% short-answer mix and schema, and `sectionId` taken from the outline.
+   - **Merge:** results are merged into the same pack schema as before (`{ title, courseCode, summary, sections[…], questions[…] }`). Near-identical questions are dropped (same normalised text, or ≥ 85% word overlap), every `sectionId` is checked against the outline, and question ids are renumbered.
+   - **Shown as it arrives:** the pack is saved to IndexedDB right after Stage 1 and opens immediately, with titles, summary and "Writing…" placeholders. Each Sections result fills its sections in; the quiz unlocks with the first Questions batch. Progress reads *Reading files ✓ → Uploading ✓ → Outlining → Writing sections (x/2) → Writing questions (x/2) → Saved ✓*, and the pack is re-saved after every part, so nothing is lost if the tab closes.
+   - **Failures:** each Stage 2 call is retried once. If it still fails, the pack is saved with what succeeded and shows **Finish this pack**, which re-runs only the missing parts. That works even after a reload: the build inputs (pasted text and file hashes) are kept locally, and the file payloads come from the prepared-file cache.
+   - **Thinking turned down for pack building only:** `generationConfig.thinkingConfig` uses `thinkingLevel: MINIMAL` (Gemini 3-series) or `thinkingBudget: 0` (Gemini 2.5 Flash). If the model rejects it, the call is retried without it and it isn't sent again that session. Nothing else changes its thinking settings.
+   - **Measured:** each stage and each Stage 2 call, time to first section and total time appear in `?debug=1` under *Last pack build timings*.
+   - The button is disabled offline: *"Building a pack needs internet. Do it while you have light and data."*
+   - Trade-off: the material is sent with each of the 5 calls, so a build uploads more data than a single call would, in exchange for a much faster first section and total time.
 3. **Store & sync:** packs are saved in **IndexedDB** (Dexie), which is the source of truth offline. The app signs in with **anonymous Auth** silently and syncs pack JSON (never the uploaded files) to **Firestore** at `users/{uid}/packs/{packId}`, merging by `updatedAt` on load and on reconnect.
 4. **Blackout Study Mode:**
    - **Read:** sections, key terms and worked examples. No AI needed.
@@ -45,7 +54,7 @@ Most AI study tools are cloud-only, so they're useless at exactly the moment a s
 
 | Step | Runs | Why |
 |---|---|---|
-| Build pack | ☁️ Cloud (`ONLY_IN_CLOUD`) | Heavy and one-time: many pages of input, PDFs (which on-device can't read), a long structured output with 30+ questions. Worth one data hit while there's light. |
+| Build pack | ☁️ Cloud (`ONLY_IN_CLOUD`), outline + 4 parallel calls | Heavy and one-time: many pages of input, PDFs (which on-device can't read), a long structured output with 30+ questions. Worth the data while there's light; splitting it makes it much faster. |
 | Read, MCQ quiz, sharing | 📦 Local (no AI) | The pack already holds the explanations, answers and explanations. Zero data and zero battery spent on inference. |
 | Mark short answers | 🔒 On-device (`ONLY_ON_DEVICE` offline, `PREFER_ON_DEVICE` online) | Frequent and personal: dozens of small calls per study session. Free, private, works in a blackout. |
 | Ask about this pack | 🔒 `ONLY_ON_DEVICE` offline, `PREFER_ON_DEVICE` online | Same reasons; the prompt is kept under 24,000 characters to fit Nano's window. |
@@ -140,7 +149,7 @@ Open the app with **`?debug=1`** (e.g. `https://<project>.web.app/?debug=1`) to 
 - The result of `getToken(appCheck, false)`: success with the token length, or the full error (with a 15 s timeout in case the reCAPTCHA Enterprise script is blocked)
 - `navigator.onLine`, Firebase `projectId` and `appId`, the page origin and the cloud model name
 - The App Check token prefetch (on load, when online) and a note that on-device calls don't use App Check
-- A one-click `ONLY_IN_CLOUD` test call, an **Offline Q&A test** (`ONLY_ON_DEVICE`, bundled sample pack) and the raw error from the last failed AI call
+- A one-click `ONLY_IN_CLOUD` test call, an **Offline Q&A test** (`ONLY_ON_DEVICE`, bundled sample pack), **Last pack build timings** (stages, each parallel call, time to first section, total, model and thinking setting) and the raw error from the last failed AI call
 
 | What you see | Likely cause |
 |---|---|

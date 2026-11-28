@@ -151,6 +151,7 @@ export default function PackLibrary({ online, status, refreshKey, onOpen, onNew 
                   <span className="pack-meta">
                     {p.sections.length} sections · {p.questions.length} questions
                     {p.source === "sample" ? " · sample" : p.source === "imported" ? " · imported" : ""}
+                    {p.build ? (p.build.status === "building" ? " · writing…" : " · unfinished") : ""}
                   </span>
                   <span className="pack-progress" aria-label={`${pct}% mastered`}>
                     <span style={{ width: `${pct}%` }} />

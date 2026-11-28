@@ -4,6 +4,9 @@ import { exportPack } from "../lib/packs.js";
 import { removeRemotePack } from "../lib/sync.js";
 import { PackQuiz } from "./PackStudy.jsx";
 import PackAsk from "./PackAsk.jsx";
+import { onPackChange, isBuilding, missingParts, finishPack } from "../lib/packBuilder.js";
+import ErrorNote from "../components/ErrorNote.jsx";
+import { friendlyError } from "../ai.js";
 
 const TABS = [
   { key: "read", label: "Read" },
@@ -31,6 +34,7 @@ export default function PackView({ packId, online, status, onStatus, onBack }) {
 
   useEffect(() => {
     getPack(packId).then((p) => setPack(p || null));
+    return onPackChange(packId, setPack); // live updates while the pack is being written
   }, [packId]);
 
   if (pack === undefined)
@@ -77,16 +81,29 @@ export default function PackView({ packId, online, status, onStatus, onBack }) {
             {pack.sections.length} sections · {pack.questions.length} questions
           </span>
         </div>
+        {pack.build && <BuildProgress pack={pack} online={online} />}
         <div className="tabs" role="tablist">
-          {TABS.map((t) => (
-            <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? "on" : ""} onClick={() => setTab(t.key)}>
-              {t.label}
-            </button>
-          ))}
+          {TABS.map((t) => {
+            const waiting = t.key === "quiz" && pack.questions.length === 0; // quiz opens with the first question batch
+            return (
+              <button
+                key={t.key}
+                role="tab"
+                aria-selected={tab === t.key}
+                className={tab === t.key ? "on" : ""}
+                onClick={() => setTab(t.key)}
+                disabled={waiting}
+                title={waiting ? "Questions are still being written" : undefined}
+              >
+                {t.label}
+                {waiting ? " · writing…" : ""}
+              </button>
+            );
+          })}
         </div>
       </div>
       {tab === "read" && <ReadMode pack={pack} />}
-      {tab === "quiz" && <PackQuiz pack={pack} online={online} onStatus={onStatus} />}
+      {tab === "quiz" && pack.questions.length > 0 && <PackQuiz pack={pack} online={online} onStatus={onStatus} />}
       {tab === "ask" && <PackAsk pack={pack} online={online} status={status} goTo={goTo} />}
     </>
   );
@@ -113,6 +130,11 @@ export function ReadMode({ pack }) {
         <article key={s.id} id={`sec-${s.id}`} className="panel section">
           <span className="sec-n">Section {i + 1}</span>
           <h3>{s.title}</h3>
+          {s.pending && (
+            <p className="writing">
+              <span className="btn-spinner" aria-hidden="true" /> Writing…
+            </p>
+          )}
           <div className="prose">{s.explanation}</div>
           {s.keyTerms.length > 0 && (
             <dl className="terms">
@@ -132,6 +154,69 @@ export function ReadMode({ pack }) {
           )}
         </article>
       ))}
+    </div>
+  );
+}
+
+const STEP_LABELS = { sections: "Writing sections", questions: "Writing questions" };
+
+/** Reading files ✓ → Uploading ✓ → Outlining ✓ → Writing sections (x/2) → Writing questions (x/2) → Saved ✓ */
+function BuildProgress({ pack, online }) {
+  const [finishing, setFinishing] = useState(false);
+  const [error, setError] = useState(null);
+  const parts = pack.build.parts || {};
+  const count = (prefix) => ["A", "B"].filter((h) => parts[`${prefix}${h}`] === "done").length;
+  const failed = (prefix) => ["A", "B"].some((h) => parts[`${prefix}${h}`] === "failed");
+  const running = isBuilding(pack.id);
+  const missing = missingParts(pack);
+  const steps = [
+    { label: "Reading files", state: "done" },
+    { label: "Uploading", state: "done" },
+    { label: "Outlining", state: "done" },
+    ...["sections", "questions"].map((k) => ({
+      label: `${STEP_LABELS[k]} (${count(k)}/2)`,
+      state: count(k) === 2 ? "done" : failed(k) || (!running && count(k) < 2) ? "failed" : "active",
+    })),
+    { label: "Saved", state: running ? "todo" : "done" },
+  ];
+
+  async function finish() {
+    setError(null);
+    setFinishing(true);
+    try {
+      await finishPack(pack.id);
+    } catch (e) {
+      setError(e?.code ? friendlyError(e, { online }) : String(e?.message || e));
+    } finally {
+      setFinishing(false);
+    }
+  }
+
+  return (
+    <div className="build-progress" aria-live="polite">
+      <ol className="build-steps">
+        {steps.map((st) => (
+          <li key={st.label} className={st.state}>
+            <span className="stage-dot" aria-hidden="true">
+              {st.state === "done" ? "✓" : st.state === "active" ? <span className="btn-spinner" /> : st.state === "failed" ? "!" : ""}
+            </span>
+            {st.label}
+          </li>
+        ))}
+      </ol>
+      {!running && missing.length > 0 && (
+        <div className="finish-row">
+          <span>Part of this pack didn&apos;t finish.</span>
+          <button className="cta small" onClick={finish} disabled={finishing || !online}>
+            <span>{finishing ? "Finishing…" : "Finish this pack"}</span>
+            <span className="arrow" aria-hidden="true">
+              {finishing ? <span className="btn-spinner" /> : "→"}
+            </span>
+          </button>
+          {!online && <span className="hint inline">Needs internet.</span>}
+        </div>
+      )}
+      <ErrorNote error={error} />
     </div>
   );
 }

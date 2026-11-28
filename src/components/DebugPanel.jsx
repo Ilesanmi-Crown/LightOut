@@ -8,6 +8,7 @@ import { getAppCheckPrefetch, onAppCheckPrefetch } from "../lib/appCheckStatus.j
 import { askPack } from "../lib/ask.js";
 import { validatePack } from "../lib/packs.js";
 import samplePackFile from "../samplePack.json";
+import { getLastBuildTimings, onBuildTimings } from "../lib/packBuilder.js";
 
 const QA_TEST_QUESTION = "Why do governments tax fuel?";
 
@@ -21,6 +22,11 @@ export default function DebugPanel({ online }) {
   const [prefetch, setPrefetch] = useState(getAppCheckPrefetch);
   const [qaTest, setQaTest] = useState({ state: "idle" });
   useEffect(() => onAppCheckPrefetch(setPrefetch), []);
+  const [buildTimings, setBuildTimings] = useState(null);
+  useEffect(() => {
+    getLastBuildTimings().then(setBuildTimings);
+    return onBuildTimings(setBuildTimings);
+  }, []);
 
   async function runQaTest() {
     setQaTest({ state: "running" });
@@ -186,6 +192,11 @@ export default function DebugPanel({ online }) {
       </div>
 
       <div className="debug-block">
+        <h3>Last pack build timings</h3>
+        {buildTimings ? <pre className="debug-pre">{formatBuildTimings(buildTimings)}</pre> : <p className="hint">No pack built on this device yet.</p>}
+      </div>
+
+      <div className="debug-block">
         <h3>Last AI error</h3>
         {lastError ? (
           <>
@@ -204,4 +215,20 @@ export default function DebugPanel({ online }) {
       </div>
     </section>
   );
+}
+
+function formatBuildTimings(t) {
+  const ms = (v) => (v == null ? "–" : `${(v / 1000).toFixed(2)}s`);
+  const lines = [
+    `${t.at} · model ${t.model} · thinking ${t.thinking}${t.finishing ? ` · finishing ${t.finishing.join(", ")}` : ""}`,
+    t.finishing ? null : `Files wait:          ${ms(t.filesWaitMs)}`,
+    t.finishing ? null : `Stage 1 (outline):   ${ms(t.stage1Ms)}   (pack opened at ${ms(t.outlineSavedMs)})`,
+    `Stage 2 (parallel):  ${ms(t.stage2Ms)}`,
+    ...Object.entries(t.calls || {}).map(
+      ([k, c]) => `  ${k.padEnd(11)} ${ms(c.ms).padStart(7)}  ${c.ok ? "ok" : "FAILED"}${c.attempts > 1 ? ` (${c.attempts} attempts)` : ""}${c.error ? ` · ${c.error}` : ""}`
+    ),
+    t.finishing ? null : `Time to first section: ${ms(t.firstSectionMs)}`,
+    `Total:               ${ms(t.totalMs)} · ${t.complete ? "complete" : "partial"}${t.questionTarget ? ` · target ${t.questionTarget} questions` : ""}`,
+  ];
+  return lines.filter(Boolean).join("\n");
 }

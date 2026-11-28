@@ -920,3 +920,17 @@ textarea:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 6
 .ask-turn > .answered-from { margin-bottom: 14px; }
 .ask-turn-meta { margin-bottom: 8px; }
 .ask-turn-meta .badge { text-transform: none; letter-spacing: 0.02em; font-size: 0.78rem; }
+
+/* ---------- Pack building progress (pack view) ---------- */
+.build-progress { margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--ink-2); display: grid; gap: 10px; }
+.build-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 0.85rem; color: var(--dim); }
+.build-steps li { display: inline-flex; align-items: center; gap: 6px; }
+.build-steps li.done { color: var(--muted); }
+.build-steps li.done .stage-dot { background: var(--volt); border-color: var(--volt); }
+.build-steps li.active { color: var(--paper); font-weight: 600; }
+.build-steps li.active .stage-dot { border-color: var(--accent); color: var(--accent); }
+.build-steps li.failed { color: var(--amber); }
+.build-steps li.failed .stage-dot { border-color: var(--amber); color: var(--amber); }
+.finish-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 0.9rem; }
+.writing { display: inline-flex; align-items: center; gap: 8px; margin: 0; color: var(--muted); font-style: italic; }
+.tabs button:disabled { opacity: 0.5; cursor: progress; }

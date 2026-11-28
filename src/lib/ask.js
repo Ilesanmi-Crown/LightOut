@@ -43,7 +43,8 @@ function hits(qset, text) {
 /** Scores sections (title x3, key terms x2, explanation + example x1) and picks the top 2-3. */
 export function selectSections(pack, question) {
   const qset = new Set(terms(question));
-  const scored = pack.sections
+  const ready = pack.sections.filter((s) => !s.pending); // skip sections still being written
+  const scored = ready
     .map((s) => ({
       s,
       score:
@@ -53,7 +54,7 @@ export function selectSections(pack, question) {
     }))
     .sort((a, b) => b.score - a.score);
   const positive = scored.filter((x) => x.score > 0);
-  if (!positive.length) return { sections: pack.sections.slice(0, 1), matched: false, useSummary: true };
+  if (!positive.length) return { sections: ready.slice(0, 1), matched: false, useSummary: true };
   return { sections: positive.slice(0, 3).map((x) => x.s), matched: true, useSummary: false };
 }
 

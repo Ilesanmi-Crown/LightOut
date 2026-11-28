@@ -31,6 +31,12 @@ local.version(4).stores({
   qa: "++id, packId, at",
 });
 
+// v5: what a pack was built from, so "Finish this pack" can re-run missing parts later.
+// { packId, title, courseCode, pasted, files: [{ name, hash }] } (file payloads live in the prepared-file cache)
+local.version(5).stores({
+  buildInputs: "packId",
+});
+
 export async function listPacks() {
   return local.packs.orderBy("updatedAt").reverse().toArray();
 }
@@ -39,9 +45,11 @@ export const getPack = (id) => local.packs.get(id);
 export const putPack = (pack) => local.packs.put(pack);
 
 export async function deletePack(id) {
-  await local.transaction("rw", local.packs, local.qstats, async () => {
+  await local.transaction("rw", local.packs, local.qstats, local.qa, local.buildInputs, async () => {
     await local.packs.delete(id);
     await local.qstats.where("packId").equals(id).delete();
+    await local.qa.where("packId").equals(id).delete();
+    await local.buildInputs.delete(id);
   });
 }
 

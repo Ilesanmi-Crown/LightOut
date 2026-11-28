@@ -68,7 +68,7 @@ Most AI study tools are cloud-only, so they're useless at exactly the moment a s
 | Service | Used for |
 |---|---|
 | **Firebase AI Logic** (Gemini Developer API backend) | Every AI call: hybrid on-device/cloud inference, structured JSON output, streaming |
-| **App Check** (reCAPTCHA v3) | Protects AI Logic (and the other services) from abuse; required by the rules |
+| **App Check** (Fraud Defense / reCAPTCHA Enterprise) | Protects AI Logic (and the other services) from abuse; required by the rules |
 | **Authentication** (Anonymous) | A silent per-device uid so packs can sync without a sign-up form |
 | **Cloud Firestore** | Synced copy of each pack's JSON at `users/{uid}/packs/{packId}` |
 | **Remote Config** | `cloud_model_name`, `naira_per_mb`, `pack_question_count`, with in-app defaults and cached values offline |
@@ -119,15 +119,15 @@ Every result that ran on-device (Quick tools, short-answer marking and Ask about
 
 Open the app with **`?debug=1`** (e.g. `https://<project>.web.app/?debug=1`) to show a diagnostics panel. It contains nothing secret, so it's safe to screenshot.
 
-- Whether `VITE_RECAPTCHA_SITE_KEY` was set in this build (first 6 characters only), whether App Check is initialized, and whether debug-token mode is on
-- The result of `getToken(appCheck, false)`: success with the token length, or the full error (with a 15 s timeout in case the reCAPTCHA script is blocked)
+- The App Check provider (`ReCaptchaEnterpriseProvider`), whether `VITE_RECAPTCHA_ENTERPRISE_SITE_KEY` was set in this build (first 6 characters only), whether App Check is initialized, and whether debug-token mode is on
+- The result of `getToken(appCheck, false)`: success with the token length, or the full error (with a 15 s timeout in case the reCAPTCHA Enterprise script is blocked)
 - `navigator.onLine`, Firebase `projectId` and `appId`, the page origin and the cloud model name
 - A one-click `ONLY_IN_CLOUD` test call, and the raw error from the last failed AI call
 
 | What you see | Likely cause |
 |---|---|
-| Site key "NOT SET in this build" | The `VITE_RECAPTCHA_SITE_KEY` secret isn't reaching the build. |
-| `getToken` fails | The reCAPTCHA key doesn't list your domain, the secret key in App Check doesn't match, or the key isn't reCAPTCHA **v3**. |
+| Site key "NOT SET in this build" | The `VITE_RECAPTCHA_ENTERPRISE_SITE_KEY` secret isn't reaching the build. |
+| `getToken` fails (often `appCheck/fetch-status-error`, HTTP 400) | The site key in the build doesn't match the one registered for this app under App Check → **Fraud Defense**, the key doesn't list your domain, the key is a checkbox (not **score-based**) key, or the app is still registered with a different provider (e.g. reCAPTCHA v3). |
 | `getToken` succeeds, but the cloud call fails with 403 | **Not App Check.** Read `errorDetails.reason`: `SERVICE_DISABLED` (enable the Firebase AI Logic / Gemini Developer API), `API_KEY_HTTP_REFERRER_BLOCKED` or `API_KEY_SERVICE_BLOCKED` (the browser API key's restrictions in Google Cloud). |
 | 404 on the model | `cloud_model_name` isn't a valid model. |
 
@@ -183,7 +183,12 @@ firestore.rules          users can only read/write users/{uid}/**
 ### 1. Firebase console
 1. Create a Firebase project and add a **Web app**. Copy its config into `.env.local` (below).
 2. **AI Logic:** Firebase Console → *AI Logic* → *Get started* → choose the **Gemini Developer API**.
-3. **App Check:** create a **reCAPTCHA v3** site key at the reCAPTCHA admin console (add `localhost` and `<project>.web.app` as domains). Register the web app under *App Check* with it, then **Enforce** App Check for **Firebase AI Logic** and **Cloud Firestore** once your debug token is registered (step 3 below).
+3. **App Check with Fraud Defense (reCAPTCHA Enterprise):**
+   1. In the Google Cloud console for the same project, enable the **reCAPTCHA Enterprise API** (now part of Fraud Defense).
+   2. Create a **website key** that is **score-based** (no checkbox challenge). Add your domains: `<project>.web.app`, `<project>.firebaseapp.com` and `localhost`.
+   3. Firebase Console → *App Check* → *Apps* → your web app → register it with **Fraud Defense (reCAPTCHA Enterprise)** and paste that **site key**. Unlike reCAPTCHA v3, there's no secret key to enter. Make sure the app isn't also left registered with reCAPTCHA v3.
+   4. Put the same site key in `VITE_RECAPTCHA_ENTERPRISE_SITE_KEY` (`.env.local` and the GitHub secret). The app uses `ReCaptchaEnterpriseProvider`.
+   5. **Enforce** App Check for **Firebase AI Logic** and **Cloud Firestore** once your debug token is registered (step 3 below). reCAPTCHA Enterprise has a free monthly quota; check Google Cloud pricing for your traffic.
 4. **Authentication:** *Build → Authentication → Sign-in method* → enable **Anonymous**.
 5. **Firestore:** *Build → Firestore Database* → *Create database* (production mode, a region near your users, e.g. `europe-west1`). Deploy the rules:
    ```bash
@@ -203,10 +208,10 @@ firestore.rules          users can only read/write users/{uid}/**
 ```bash
 cp .env.example .env.local
 ```
-Fill in the `VITE_FIREBASE_*` values and `VITE_RECAPTCHA_SITE_KEY`. `.env.local` is git-ignored; never commit it.
+Fill in the `VITE_FIREBASE_*` values and `VITE_RECAPTCHA_ENTERPRISE_SITE_KEY`. `.env.local` is git-ignored; never commit it.
 
 ### 3. App Check debug token (local dev)
-`localhost` can't pass reCAPTCHA, so:
+`localhost` usually can't get a passing Fraud Defense score, so use a debug token:
 1. Run `npm run dev` and open the browser console. With no `VITE_APPCHECK_DEBUG_TOKEN` set, dev mode prints `App Check debug token: xxxx`.
 2. Firebase Console → App Check → *Apps* → ⋮ → **Manage debug tokens** → add that token.
 3. Optionally put it in `.env.local` as `VITE_APPCHECK_DEBUG_TOKEN` so it stays the same between runs.
@@ -236,7 +241,7 @@ Automatic: every push to `main` runs `.github/workflows/deploy.yml` (Hosting onl
 |---|---|
 | `FIREBASE_SERVICE_ACCOUNT` | Service-account JSON (`firebase init hosting:github` creates it) |
 | `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID` | Web app config (`VITE_FIREBASE_PROJECT_ID` is also the deploy target) |
-| `VITE_RECAPTCHA_SITE_KEY` | reCAPTCHA v3 site key |
+| `VITE_RECAPTCHA_ENTERPRISE_SITE_KEY` | Fraud Defense (reCAPTCHA Enterprise) score-based site key |
 | `VITE_CLOUD_MODEL` *(optional)* | Build-time fallback for the cloud model; Remote Config's `cloud_model_name` takes precedence |
 
 `VITE_APPCHECK_DEBUG_TOKEN` may exist as a secret but is **intentionally not passed to the production build**. A debug token baked into the public bundle would let anyone bypass App Check.

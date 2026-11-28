@@ -2,7 +2,7 @@
 // Order matters: App Check must be initialized BEFORE getAI (and the other
 // services), on the SAME app instance, exactly once.
 import { initializeApp, getApp, getApps } from "firebase/app";
-import { initializeAppCheck, ReCaptchaV3Provider } from "firebase/app-check";
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "firebase/app-check";
 import { getAI, GoogleAIBackend } from "firebase/ai";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
@@ -23,7 +23,9 @@ const firebaseConfig = {
 export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 // 2. App Check, once, before any other service is created.
-export const RECAPTCHA_SITE_KEY = env.VITE_RECAPTCHA_SITE_KEY || "";
+// The app is registered in App Check with Fraud Defense (reCAPTCHA Enterprise).
+export const RECAPTCHA_ENTERPRISE_SITE_KEY = env.VITE_RECAPTCHA_ENTERPRISE_SITE_KEY || "";
+export const APP_CHECK_PROVIDER = "ReCaptchaEnterpriseProvider";
 
 // The debug token must be set on `self` BEFORE initializeAppCheck runs.
 // Production builds never get a debug token (the deploy workflow doesn't pass one).
@@ -35,9 +37,9 @@ if (env.VITE_APPCHECK_DEBUG_TOKEN) {
 }
 
 const g = globalThis;
-if (!g.__lightoutAppCheck && RECAPTCHA_SITE_KEY) {
+if (!g.__lightoutAppCheck && RECAPTCHA_ENTERPRISE_SITE_KEY) {
   g.__lightoutAppCheck = initializeAppCheck(app, {
-    provider: new ReCaptchaV3Provider(RECAPTCHA_SITE_KEY),
+    provider: new ReCaptchaEnterpriseProvider(RECAPTCHA_ENTERPRISE_SITE_KEY),
     isTokenAutoRefreshEnabled: true,
   });
 }
@@ -46,7 +48,7 @@ export const appCheckDebugMode = Boolean(self.FIREBASE_APPCHECK_DEBUG_TOKEN);
 
 if (!appCheck) {
   console.warn(
-    "[Lightout] VITE_RECAPTCHA_SITE_KEY is not set in this build: App Check is OFF, so cloud requests will be rejected. On-device AI still works."
+    "[Lightout] VITE_RECAPTCHA_ENTERPRISE_SITE_KEY is not set in this build: App Check is OFF, so cloud requests will be rejected. On-device AI still works."
   );
 }
 

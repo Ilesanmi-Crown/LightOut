@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { getToken } from "firebase/app-check";
-import { app, appCheck, appCheckDebugMode, RECAPTCHA_SITE_KEY } from "../firebase.js";
+import { app, appCheck, appCheckDebugMode, APP_CHECK_PROVIDER, RECAPTCHA_ENTERPRISE_SITE_KEY } from "../firebase.js";
 import { errorDetails, formatRawError, getLastAIError, onLastAIError, safeJson } from "../lib/diagnostics.js";
 import { getConfig } from "../lib/config.js";
 import { runPrompt, InferenceMode } from "../ai.js";
@@ -15,7 +15,7 @@ export default function DebugPanel({ online }) {
 
   const checkToken = useCallback(async () => {
     if (!appCheck) {
-      setToken({ state: "error", text: "App Check was NOT initialized: VITE_RECAPTCHA_SITE_KEY was empty when this build was made." });
+      setToken({ state: "error", text: "App Check was NOT initialized: VITE_RECAPTCHA_ENTERPRISE_SITE_KEY was empty when this build was made." });
       return;
     }
     setToken({ state: "running" });
@@ -27,7 +27,7 @@ export default function DebugPanel({ online }) {
           setTimeout(
             () =>
               reject(
-                Object.assign(new Error(`getToken did not settle within ${TOKEN_TIMEOUT_MS / 1000}s. The reCAPTCHA script (www.google.com/recaptcha) may be blocked (ad blocker, network) or slow.`), {
+                Object.assign(new Error(`getToken did not settle within ${TOKEN_TIMEOUT_MS / 1000}s. The reCAPTCHA Enterprise script (www.google.com/recaptcha/enterprise.js) may be blocked (ad blocker, network) or slow.`), {
                   name: "TimeoutError",
                 })
               ),
@@ -63,8 +63,14 @@ export default function DebugPanel({ online }) {
 
   const opts = app.options || {};
   const rows = [
-    ["VITE_RECAPTCHA_SITE_KEY", RECAPTCHA_SITE_KEY ? `set (${RECAPTCHA_SITE_KEY.slice(0, 6)}…, ${RECAPTCHA_SITE_KEY.length} chars)` : "NOT SET in this build"],
-    ["App Check initialized", appCheck ? "yes (ReCaptchaV3Provider)" : "no"],
+    ["App Check provider", APP_CHECK_PROVIDER],
+    [
+      "VITE_RECAPTCHA_ENTERPRISE_SITE_KEY",
+      RECAPTCHA_ENTERPRISE_SITE_KEY
+        ? `set (${RECAPTCHA_ENTERPRISE_SITE_KEY.slice(0, 6)}…, ${RECAPTCHA_ENTERPRISE_SITE_KEY.length} chars)`
+        : "NOT SET in this build",
+    ],
+    ["App Check initialized", appCheck ? `yes (${APP_CHECK_PROVIDER})` : "no"],
     ["App Check debug token mode", appCheckDebugMode ? "ON (debug provider token)" : "off"],
     ["navigator.onLine", String(navigator.onLine)],
     ["Firebase projectId", opts.projectId || "(missing)"],

@@ -1,5 +1,6 @@
-import { useRef, useState } from "react";
-import { ACCEPT, MAX_TOTAL_BYTES, formatBytes, ingestFile } from "../lib/ingest.js";
+import { useEffect, useRef, useState } from "react";
+import { ACCEPT, MAX_TOTAL_BYTES, formatBytes, detectKind } from "../lib/ingest.js";
+import { createPrepareQueue } from "../lib/prepareQueue.js";
 import { buildPack } from "../lib/packs.js";
 import { putPack } from "../lib/db.js";
 import { pushPack } from "../lib/sync.js";
@@ -12,54 +13,65 @@ import { SAMPLE_NOTES } from "../sampleNotes.js";
 const KIND_LABEL = { pdf: "PDF", docx: "Word", txt: "Text", image: "Photo" };
 
 const STAGES = [
-  { key: "reading", label: "Reading your files" },
+  { key: "reading", label: "Preparing your files", activeLabel: "Finishing your files…" },
   { key: "uploading", label: "Uploading" },
   { key: "building", label: "Writing your pack" },
   { key: "saving", label: "Saving for offline" },
 ];
 
+// Until a photo is prepared we don't know its final size; resized JPEGs land well under 1 MB.
+const estimateBytes = (it) => (it.status === "ready" ? it.payloadBytes : it.kind === "image" ? Math.min(it.size, 1024 * 1024) : it.size);
+
 export default function NewPack({ online, onCreated }) {
   const [title, setTitle] = useState("");
   const [courseCode, setCourseCode] = useState("");
   const [pasted, setPasted] = useState("");
-  const [items, setItems] = useState([]); // ingested files
-  const [pending, setPending] = useState(0); // files still being read
+  // { id, name, size, kind, status: "preparing" | "ready" | "error", payload?, payloadBytes?, previewUrl?, error? }
+  const [items, setItems] = useState([]);
   const [stage, setStage] = useState(null);
   const [error, setError] = useState("");
   const [built, setBuilt] = useState(null); // { ms, source }
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef(null);
   const cameraInput = useRef(null);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
   const elapsed = useElapsed(stage === "uploading" || stage === "building");
 
+  // Background preparation: starts the moment a file is added (max 3 at once).
+  const queueRef = useRef(null);
+  if (!queueRef.current) {
+    queueRef.current = createPrepareQueue((id, patch) =>
+      setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)))
+    );
+  }
+  useEffect(() => () => queueRef.current.cancelAll(), []);
+
   const pastedBytes = new TextEncoder().encode(pasted).length;
-  const totalBytes = items.reduce((n, it) => n + it.payloadBytes, 0) + pastedBytes;
+  const totalBytes = items.reduce((n, it) => n + estimateBytes(it), 0) + pastedBytes;
   const overLimit = totalBytes > MAX_TOTAL_BYTES;
   const hasContent = pasted.trim().length > 0 || items.length > 0;
   const building = stage !== null;
+  const preparingCount = items.filter((it) => it.status === "preparing").length;
 
-  async function addFiles(fileList) {
+  function addFiles(fileList) {
     const files = Array.from(fileList || []);
     if (!files.length) return;
     setError("");
-    setPending((n) => n + files.length);
-    const errors = [];
-    await Promise.all(
-      files.map(async (f) => {
-        try {
-          const it = await ingestFile(f);
-          setItems((prev) => [...prev, it]);
-        } catch (e) {
-          errors.push(e.message || String(e));
-        } finally {
-          setPending((n) => n - 1);
-        }
-      })
-    );
-    if (errors.length) setError(errors.join(" "));
+    const added = files.map((file) => ({
+      id: crypto.randomUUID(),
+      name: file.name,
+      size: file.size,
+      kind: detectKind(file),
+      status: "preparing",
+      file,
+    }));
+    setItems((prev) => [...prev, ...added]);
+    for (const it of added) queueRef.current.add(it.id, it.file);
   }
 
   function removeItem(id) {
+    queueRef.current.remove(id); // cancels the job and discards its result
     setItems((prev) => prev.filter((it) => it.id !== id));
   }
 
@@ -74,16 +86,32 @@ export default function NewPack({ online, onCreated }) {
       setError("Add notes, files or photos first.");
       return;
     }
-    if (overLimit) {
-      setError(`That's ${formatBytes(totalBytes)}. Remove a file to get under 15 MB.`);
-      return;
-    }
     const start = performance.now();
     try {
+      // Step 1-3 already ran in the background; only wait for files still preparing.
       setStage("reading");
-      await new Promise((r) => setTimeout(r, 250)); // files are already read; let the stage render
+      const queue = queueRef.current;
+      const ids = itemsRef.current.map((it) => it.id);
+      if (ids.some((id) => !queue.result(id))) await queue.whenIdle();
+      // Read results from the queue (the source of truth), not from React state, which may lag a render.
+      const ready = itemsRef.current
+        .filter((it) => ids.includes(it.id))
+        .map((it) => ({ ...it, ...queue.result(it.id) }));
+      const failed = ready.filter((it) => it.status !== "ready");
+      if (failed.length) {
+        setStage(null);
+        setError(`Couldn't read ${failed.map((f) => `"${f.name}"`).join(", ")}. Remove it to build your pack.`);
+        return;
+      }
+      const finalBytes = ready.reduce((n, it) => n + it.payloadBytes, 0) + pastedBytes;
+      if (finalBytes > MAX_TOTAL_BYTES) {
+        setStage(null);
+        setError(`That's ${formatBytes(finalBytes)}. Remove a file to get under 15 MB.`);
+        return;
+      }
+      // Step 4: the ONLY_IN_CLOUD pack-building call, using the prepared payloads.
       setStage("uploading");
-      const buildPromise = buildPack({ title, courseCode, pasted, items });
+      const buildPromise = buildPack({ title, courseCode, pasted, items: ready.map(({ name, payload }) => ({ name, payload })) });
       // The request is one call; flip to "building" once the upload has had a moment.
       const t = setTimeout(() => setStage((s) => (s === "uploading" ? "building" : s)), 2500);
       const { pack, source } = await buildPromise;
@@ -190,25 +218,32 @@ export default function NewPack({ online, onCreated }) {
           />
         </div>
 
-        {(items.length > 0 || pending > 0) && (
+        {items.length > 0 && (
           <ul className="chips" aria-label="Files in this pack">
             {items.map((it) => (
-              <li key={it.id} className="chip">
-                {it.previewUrl ? <img src={it.previewUrl} alt="" /> : <span className="chip-kind">{KIND_LABEL[it.kind]}</span>}
-                <span className="chip-name" title={it.name}>
+              <li key={it.id} className={`chip is-${it.status}`}>
+                {it.previewUrl ? <img src={it.previewUrl} alt="" /> : <span className="chip-kind">{KIND_LABEL[it.kind] || "File"}</span>}
+                <span className="chip-name" title={it.status === "error" ? it.error : it.name}>
                   {it.name}
                 </span>
-                <span className="chip-size">{formatBytes(it.payloadBytes)}</span>
+                <span className="chip-status" aria-live="polite">
+                  {it.status === "preparing" ? (
+                    <>
+                      <span className="btn-spinner" aria-hidden="true" /> Preparing…
+                    </>
+                  ) : it.status === "ready" ? (
+                    <>
+                      Ready ✓ <span className="chip-size">{formatBytes(it.payloadBytes)}</span>
+                    </>
+                  ) : (
+                    "Couldn't read this file"
+                  )}
+                </span>
                 <button type="button" className="chip-x" onClick={() => removeItem(it.id)} disabled={building} aria-label={`Remove ${it.name}`}>
                   ×
                 </button>
               </li>
             ))}
-            {pending > 0 && (
-              <li className="chip is-pending">
-                <span className="btn-spinner" aria-hidden="true" /> Reading {pending} file{pending > 1 ? "s" : ""}…
-              </li>
-            )}
           </ul>
         )}
 
@@ -222,7 +257,7 @@ export default function NewPack({ online, onCreated }) {
         </div>
 
         <div className="build-row">
-          <button className="cta" onClick={handleBuild} disabled={!online || building || pending > 0 || !hasContent || overLimit}>
+          <button className="cta" onClick={handleBuild} disabled={!online || building || !hasContent || overLimit}>
             <span>{building ? "Building…" : "Build pack"}</span>
             <span className="arrow" aria-hidden="true">
               {building ? <span className="btn-spinner" /> : "→"}
@@ -238,7 +273,7 @@ export default function NewPack({ online, onCreated }) {
                 <span className="stage-dot" aria-hidden="true">
                   {i < stageIndex ? "✓" : i === stageIndex ? <span className="btn-spinner" /> : ""}
                 </span>
-                {s.label}
+                {i === stageIndex && s.activeLabel ? s.activeLabel : s.label}
                 {i === stageIndex && (s.key === "uploading" || s.key === "building") && elapsed > 0 && (
                   <span className="stage-time">{elapsed}s</span>
                 )}

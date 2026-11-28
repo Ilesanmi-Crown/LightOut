@@ -95,29 +95,110 @@ async function imageToJpeg(file) {
   return { mimeType: "image/jpeg", base64, payloadBytes: Math.floor((base64.length * 3) / 4), previewUrl: dataUrl };
 }
 
+const PASS_THROUGH_BYTES = 1.5 * 1024 * 1024; // small JPEG/PNG photos are sent as-is
+
+class CancelledError extends Error {
+  constructor() {
+    super("cancelled");
+    this.name = "CancelledError";
+  }
+}
+export const isCancelled = (e) => e?.name === "CancelledError";
+
+const canUseWorker =
+  typeof Worker !== "undefined" && typeof OffscreenCanvas !== "undefined" && typeof createImageBitmap !== "undefined";
+
+/** Runs one PDF/photo job in its own worker; terminating the worker cancels it. Resolves null if unsupported. */
+function runInWorker(file, kind, signal) {
+  if (!canUseWorker) return Promise.resolve(null);
+  return new Promise((resolve, reject) => {
+    let worker;
+    try {
+      worker = new Worker(new URL("./prepare.worker.js", import.meta.url), { type: "module" });
+    } catch {
+      resolve(null);
+      return;
+    }
+    const stop = () => {
+      worker.terminate();
+      reject(new CancelledError());
+    };
+    if (signal?.aborted) return stop();
+    signal?.addEventListener("abort", stop, { once: true });
+    worker.onmessage = (e) => {
+      signal?.removeEventListener("abort", stop);
+      worker.terminate();
+      resolve(e.data);
+    };
+    worker.onerror = () => {
+      signal?.removeEventListener("abort", stop);
+      worker.terminate();
+      resolve(null); // fall back to the main thread
+    };
+    worker.postMessage({ file, kind, maxSide: MAX_SIDE, quality: JPEG_QUALITY, passThroughBytes: PASS_THROUGH_BYTES });
+  });
+}
+
+function heicError(file) {
+  const heic = /\.(heic|heif)$/i.test(file.name) || /hei[cf]/i.test(file.type);
+  return new Error(heic ? `Can't open "${file.name}" here. Send it as a JPEG instead.` : `Couldn't open "${file.name}". Try another photo.`);
+}
+
 /**
- * @returns {Promise<{ id, name, size, kind, text?, mimeType?, base64?, previewUrl?, payloadBytes }>}
+ * Prepares one file into its final cloud payload. Heavy work (PDF base64, photo
+ * decode/resize/JPEG) runs in a worker where the browser supports it.
+ * @returns {Promise<{ kind, payload: { text } | { inlineData: { data, mimeType } }, payloadBytes, previewUrl? }>}
  */
-export async function ingestFile(file) {
+export async function prepareFile(file, { signal } = {}) {
   const kind = detectKind(file);
-  const base = { id: crypto.randomUUID(), name: file.name, size: file.size, kind };
   if (!kind) throw new Error(`"${file.name}" isn't supported. Use a PDF, Word file, text file or photo.`);
+  const check = () => {
+    if (signal?.aborted) throw new CancelledError();
+  };
 
   if (kind === "txt") {
     const text = await file.text();
-    return { ...base, text, payloadBytes: new TextEncoder().encode(text).length };
+    check();
+    return { kind, payload: { text }, payloadBytes: new TextEncoder().encode(text).length };
   }
   if (kind === "docx") {
-    const mammoth = await import("mammoth"); // lazy: only loaded when a DOCX is added
+    const mammoth = await import("mammoth"); // lazy: only loaded when a Word file is added
+    check();
     const { value } = await (mammoth.extractRawText || mammoth.default.extractRawText)({ arrayBuffer: await file.arrayBuffer() });
+    check();
     const text = value.trim();
     if (!text) throw new Error(`"${file.name}" has no text we can read.`);
-    return { ...base, text, payloadBytes: new TextEncoder().encode(text).length };
+    return { kind, payload: { text }, payloadBytes: new TextEncoder().encode(text).length };
   }
-  if (kind === "pdf") {
-    const dataUrl = await readAsDataURL(file);
-    const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
-    return { ...base, mimeType: "application/pdf", base64, payloadBytes: file.size };
+
+  // PDF and photos: worker first, main thread as fallback.
+  const w = await runInWorker(file, kind, signal);
+  check();
+  let res = w;
+  if (!res || (!res.ok && !res.decode)) {
+    if (kind === "pdf") {
+      const dataUrl = await readAsDataURL(file);
+      res = { ok: true, mimeType: "application/pdf", base64: dataUrl.slice(dataUrl.indexOf(",") + 1), payloadBytes: file.size };
+    } else {
+      try {
+        res = { ok: true, ...(await imageToJpeg(file)) }; // main-thread canvas path (e.g. Safari HEIC)
+      } catch (e) {
+        throw e?.message ? e : heicError(file);
+      }
+    }
+  } else if (!res.ok && res.decode) {
+    // The worker couldn't decode it (often HEIC outside Safari); <img> on the main thread sometimes can.
+    try {
+      res = { ok: true, ...(await imageToJpeg(file)) };
+    } catch {
+      throw heicError(file);
+    }
   }
-  return { ...base, ...(await imageToJpeg(file)) };
+  check();
+  return {
+    kind,
+    payload: { inlineData: { data: res.base64, mimeType: res.mimeType } },
+    payloadBytes: res.payloadBytes,
+    previewUrl: kind === "image" ? `data:${res.mimeType};base64,${res.base64}` : undefined,
+  };
 }

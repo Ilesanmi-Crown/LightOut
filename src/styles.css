@@ -874,3 +874,11 @@ textarea:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 6
   .empty-line { flex-direction: column; align-items: stretch; text-align: center; }
 }
 .mainnav + .nudge, .mainnav + .debug + .nudge { margin-top: 16px; }
+
+/* ---------- File preparation status on chips ---------- */
+.chip-status { display: inline-flex; align-items: center; gap: 6px; font: 0.72rem/1 var(--mono); color: var(--muted); white-space: nowrap; }
+.chip.is-ready .chip-status { color: var(--volt); }
+.chip.is-ready .chip-status .chip-size { color: var(--dim); }
+.chip.is-error { border-color: color-mix(in srgb, var(--bad) 55%, var(--line)); }
+.chip.is-error .chip-status { color: var(--bad); }
+.chip-status .btn-spinner { width: 10px; height: 10px; }

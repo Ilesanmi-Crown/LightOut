@@ -101,13 +101,17 @@ export function buildPackParts({ title, courseCode, pasted, items }) {
   const count = getConfig().pack_question_count;
   const parts = [{ text: packInstruction({ title, courseCode, count }) }];
   if (pasted.trim()) parts.push({ text: `PASTED NOTES:\n"""\n${pasted.trim()}\n"""` });
+  // Each item carries its prepared payload: { text } or { inlineData: { data, mimeType } }.
+  const payloadOf = (it) => it.payload || (it.text ? { text: it.text } : { inlineData: { mimeType: it.mimeType, data: it.base64 } });
   for (const it of items) {
-    if (it.text) parts.push({ text: `FILE "${it.name}":\n"""\n${it.text}\n"""` });
+    const p = payloadOf(it);
+    if (p.text) parts.push({ text: `FILE "${it.name}":\n"""\n${p.text}\n"""` });
   }
   for (const it of items) {
-    if (it.base64) {
+    const p = payloadOf(it);
+    if (p.inlineData) {
       parts.push({ text: `Attached file: "${it.name}"` });
-      parts.push({ inlineData: { mimeType: it.mimeType, data: it.base64 } });
+      parts.push({ inlineData: p.inlineData });
     }
   }
   return parts;

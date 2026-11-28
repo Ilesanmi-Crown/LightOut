@@ -19,6 +19,7 @@ export function errorDetails(err) {
   }
   if (err.customData && typeof err.customData === "object") out.customData = err.customData;
   if (err.cause) out.cause = String(err.cause?.message || err.cause);
+  if (err.fallbackError) out.fallbackError = err.fallbackError;
   return out;
 }
 
@@ -34,6 +35,7 @@ export function formatRawError(err) {
   }
   if (d.customData) lines.push(`customData: ${safeJson(d.customData)}`);
   if (d.cause) lines.push(`cause: ${d.cause}`);
+  if (d.fallbackError) lines.push(`fallback model also failed: ${d.fallbackError}`);
   return lines.join("\n");
 }
 

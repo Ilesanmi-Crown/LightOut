@@ -378,9 +378,16 @@ export async function runPrompt(args) {
         const fallback = getConfig().cloud_fallback_model;
         if (!fallback || fallback === main) throw err;
         setCloudStatus(callId, { kind: "fallback", model: fallback, task: args.taskKey });
-        const r = await runPromptInner({ ...args, mode: InferenceMode.ONLY_IN_CLOUD, modelOverride: fallback });
-        noteModel(r, fallback, true, args);
-        return { ...r, model: fallback, usedFallback: true };
+        try {
+          const r = await runPromptInner({ ...args, mode: InferenceMode.ONLY_IN_CLOUD, modelOverride: fallback });
+          noteModel(r, fallback, true, args);
+          return { ...r, model: fallback, usedFallback: true };
+        } catch (fallbackErr) {
+          // Report the original "busy" error to the student; keep the fallback's raw error for ?debug=1.
+          console.warn(`[Lightout] Fallback model ${fallback} failed too`, fallbackErr);
+          err.fallbackError = formatRawError(fallbackErr);
+          throw err;
+        }
       }
     }
   } catch (err) {

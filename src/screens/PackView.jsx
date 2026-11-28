@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { getPack, deletePack } from "../lib/db.js";
 import { exportPack } from "../lib/packs.js";
 import { removeRemotePack } from "../lib/sync.js";
-import { PackQuiz, PackAsk } from "./PackStudy.jsx";
+import { PackQuiz } from "./PackStudy.jsx";
+import PackAsk from "./PackAsk.jsx";
 
 const TABS = [
   { key: "read", label: "Read" },
@@ -11,9 +12,22 @@ const TABS = [
 ];
 
 /** One pack in Blackout Study Mode: Read (no AI), adaptive Quiz, Ask (on-device first). */
-export default function PackView({ packId, online, onStatus, onBack }) {
+export default function PackView({ packId, online, status, onStatus, onBack }) {
   const [pack, setPack] = useState(undefined);
   const [tab, setTab] = useState("read");
+  const [jumpTo, setJumpTo] = useState(null); // section id to scroll to after switching to Read
+
+  const goTo = (nextTab, sectionId) => {
+    setTab(nextTab);
+    setJumpTo(sectionId || null);
+    if (!sectionId) window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    if (tab !== "read" || !jumpTo) return;
+    requestAnimationFrame(() => document.getElementById(`sec-${jumpTo}`)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    setJumpTo(null);
+  }, [tab, jumpTo]);
 
   useEffect(() => {
     getPack(packId).then((p) => setPack(p || null));
@@ -73,7 +87,7 @@ export default function PackView({ packId, online, onStatus, onBack }) {
       </div>
       {tab === "read" && <ReadMode pack={pack} />}
       {tab === "quiz" && <PackQuiz pack={pack} online={online} onStatus={onStatus} />}
-      {tab === "ask" && <PackAsk pack={pack} online={online} onStatus={onStatus} />}
+      {tab === "ask" && <PackAsk pack={pack} online={online} status={status} goTo={goTo} />}
     </>
   );
 }

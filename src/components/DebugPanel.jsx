@@ -3,7 +3,13 @@ import { getToken } from "firebase/app-check";
 import { app, appCheck, appCheckDebugMode, APP_CHECK_PROVIDER, RECAPTCHA_ENTERPRISE_SITE_KEY } from "../firebase.js";
 import { errorDetails, formatRawError, getLastAIError, onLastAIError, safeJson } from "../lib/diagnostics.js";
 import { getConfig } from "../lib/config.js";
-import { runPrompt, InferenceMode } from "../ai.js";
+import { runPrompt, InferenceMode, InferenceSource, getOnDeviceStatus } from "../ai.js";
+import { getAppCheckPrefetch, onAppCheckPrefetch } from "../lib/appCheckStatus.js";
+import { askPack } from "../lib/ask.js";
+import { validatePack } from "../lib/packs.js";
+import samplePackFile from "../samplePack.json";
+
+const QA_TEST_QUESTION = "Why do governments tax fuel?";
 
 const TOKEN_TIMEOUT_MS = 15_000;
 
@@ -12,6 +18,37 @@ export default function DebugPanel({ online }) {
   const [token, setToken] = useState({ state: "idle" });
   const [lastError, setLastError] = useState(getLastAIError);
   const [cloudTest, setCloudTest] = useState({ state: "idle" });
+  const [prefetch, setPrefetch] = useState(getAppCheckPrefetch);
+  const [qaTest, setQaTest] = useState({ state: "idle" });
+  useEffect(() => onAppCheckPrefetch(setPrefetch), []);
+
+  async function runQaTest() {
+    setQaTest({ state: "running" });
+    const status = await getOnDeviceStatus({ refresh: true });
+    if (status !== "available") {
+      setQaTest({ state: "fail", text: `Offline brain is "${status}", so ONLY_ON_DEVICE can't run.` });
+      return;
+    }
+    try {
+      const pack = validatePack(samplePackFile.pack);
+      const r = await askPack({
+        pack,
+        question: QA_TEST_QUESTION,
+        history: [],
+        mode: InferenceMode.ONLY_ON_DEVICE,
+        bypassCache: true,
+        label: "qa-self-test",
+        countSavings: false,
+      });
+      const pass = r.source === InferenceSource.ON_DEVICE && r.text.trim().length > 0;
+      setQaTest({
+        state: pass ? "pass" : "fail",
+        text: `${pass ? "Pass" : "Fail"} · ${r.source} · ${Math.round(r.ms)}ms · prompt ${r.chars} chars\nSections: ${r.sections.map((s) => s.title).join(" · ")}\nAnswer: ${r.text.trim().slice(0, 240)}`,
+      });
+    } catch (e) {
+      setQaTest({ state: "fail", text: formatRawError(e) });
+    }
+  }
 
   const checkToken = useCallback(async () => {
     if (!appCheck) {
@@ -72,6 +109,15 @@ export default function DebugPanel({ online }) {
     ],
     ["App Check initialized", appCheck ? `yes (${APP_CHECK_PROVIDER})` : "no"],
     ["App Check debug token mode", appCheckDebugMode ? "ON (debug provider token)" : "off"],
+    [
+      "App Check token prefetch (on load)",
+      prefetch.status === "ok"
+        ? `ok · length ${prefetch.length} · ${prefetch.ms}ms · ${prefetch.at}`
+        : prefetch.status === "error"
+          ? `error · ${prefetch.at} (see below)`
+          : prefetch.status,
+    ],
+    ["App Check & on-device AI", "Not needed: Firebase AI Logic only attaches App Check tokens to cloud requests"],
     ["navigator.onLine", String(navigator.onLine)],
     ["Firebase projectId", opts.projectId || "(missing)"],
     ["Firebase appId", opts.appId || "(missing)"],
@@ -121,6 +167,22 @@ export default function DebugPanel({ online }) {
         {cloudTest.state === "ok" && <p className="ok-text">{cloudTest.text}</p>}
         {cloudTest.state === "error" && <pre className="debug-pre bad">{cloudTest.text}</pre>}
         {cloudTest.state === "idle" && <p className="hint">Sends a tiny prompt through Firebase AI Logic to isolate cloud/App Check problems.</p>}
+      </div>
+
+      {prefetch.status === "error" && <pre className="debug-pre bad">{prefetch.error}</pre>}
+
+      <div className="debug-block">
+        <div className="debug-row">
+          <h3>Offline Q&amp;A test (ONLY_ON_DEVICE, sample pack)</h3>
+          <button className="ghost" onClick={runQaTest} disabled={qaTest.state === "running"}>
+            {qaTest.state === "running" ? "Running…" : "Run"}
+          </button>
+        </div>
+        {qaTest.state === "idle" && <p className="hint">Asks “{QA_TEST_QUESTION}” against the bundled ECO 201 pack, on this device only.</p>}
+        {qaTest.state === "running" && <p className="hint">Running on device…</p>}
+        {(qaTest.state === "pass" || qaTest.state === "fail") && (
+          <pre className={`debug-pre ${qaTest.state === "fail" ? "bad" : ""}`}>{qaTest.text}</pre>
+        )}
       </div>
 
       <div className="debug-block">

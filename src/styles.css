@@ -900,3 +900,23 @@ textarea:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 6
 .data-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .data-actions .ghost { padding: 8px 12px; font-size: 0.85rem; }
 .small-note { margin: 0; font-size: 0.85rem; }
+
+/* ---------- Ask about this pack ---------- */
+.ask-unavailable { margin: 0; border-color: color-mix(in srgb, var(--amber) 40%, var(--line)); }
+.ask-unavailable p { margin: 0; }
+.ask-unavailable .row-actions { margin-top: 12px; }
+.ask-q-title { font-size: clamp(1.15rem, 2.6vw, 1.45rem) !important; line-height: 1.25 !important; letter-spacing: -0.015em !important; }
+.answered-from { margin: 14px 0 0; font-size: 0.85rem; color: var(--muted); }
+.answered-from .linkish { font-size: inherit; }
+.ask-history { display: grid; gap: 8px; }
+.ask-history-head { display: flex; justify-content: space-between; align-items: baseline; margin-top: 6px; }
+.ask-history-head h3 { margin: 0; font: 700 1.05rem/1.2 var(--display); }
+.ask-turn { border: 1px solid var(--line); border-radius: 12px; background: var(--ink-2); }
+.ask-turn > summary { cursor: pointer; padding: 12px 14px; font-weight: 600; list-style: none; }
+.ask-turn > summary::-webkit-details-marker { display: none; }
+.ask-turn > summary::before { content: "▸ "; color: var(--dim); }
+.ask-turn[open] > summary::before { content: "▾ "; }
+.ask-turn > :not(summary) { margin-left: 14px; margin-right: 14px; }
+.ask-turn > .answered-from { margin-bottom: 14px; }
+.ask-turn-meta { margin-bottom: 8px; }
+.ask-turn-meta .badge { text-transform: none; letter-spacing: 0.02em; font-size: 0.78rem; }

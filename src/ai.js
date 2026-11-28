@@ -268,7 +268,7 @@ export async function runPrompt(args) {
  * `countSavings: false` keeps tests/benchmarks out of the data-saved total.
  * Returns { text, source, ms, requestBytes, responseBytes }.
  */
-async function runPromptInner({ taskKey, parts, mode, onText, label, countSavings = true }) {
+async function runPromptInner({ taskKey, parts, mode, onText, label, countSavings = true, signal }) {
   const model = getModel(taskKey, mode);
   const task = ALL_TASKS[taskKey];
   const start = performance.now();
@@ -276,7 +276,7 @@ async function runPromptInner({ taskKey, parts, mode, onText, label, countSaving
   let text = "";
 
   if (!task.json) {
-    const result = await model.generateContentStream(parts);
+    const result = await model.generateContentStream(parts, signal ? { signal } : undefined);
     for await (const chunk of result.stream) {
       let piece = "";
       try {
@@ -291,7 +291,7 @@ async function runPromptInner({ taskKey, parts, mode, onText, label, countSaving
     }
     response = await result.response;
   } else {
-    response = (await model.generateContent(parts)).response;
+    response = (await model.generateContent(parts, signal ? { signal } : undefined)).response;
     text = response.text();
   }
 

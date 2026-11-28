@@ -26,6 +26,11 @@ local.version(3).stores({
   answers: "key, at",
 });
 
+// v4: "Ask about this pack" history { id, packId, question, answer, sections: [{ id, title }], source, ms, at }
+local.version(4).stores({
+  qa: "++id, packId, at",
+});
+
 export async function listPacks() {
   return local.packs.orderBy("updatedAt").reverse().toArray();
 }

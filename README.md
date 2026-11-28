@@ -37,7 +37,7 @@ Most AI study tools are cloud-only, so they're useless at exactly the moment a s
    - **Read:** sections, key terms and worked examples. No AI needed.
    - **Quiz:** rounds of 10 drawn from the stored bank. Questions you got wrong come first, then unseen ones, then the oldest correct ones; per-question stats live in IndexedDB. MCQs need no AI.
    - **Short-answer marking:** sends the question, model answer and your answer to the model, which returns `{ score: 0–10, verdict: "correct" | "partly" | "wrong", feedback }`. This runs **on-device**. If AI isn't available, you can compare with the model answer and self-mark.
-   - **Ask about this pack:** picks the 2–3 most relevant sections by keyword overlap, caps the context at ~12,000 characters (Nano's limit is 9,216 tokens for prompt + answer), and streams an answer grounded only in that context. If the pack doesn't cover it, it says so.
+   - **Ask about this pack:** see [Ask about this pack (offline)](#ask-about-this-pack-offline) below.
 5. **Savings counter:** every on-device call adds its request + response bytes to a running total in IndexedDB, alongside questions answered offline and on-device calls. The Packs screen shows *"Saved X MB of data (≈ ₦Y)"*, using `naira_per_mb` from **Remote Config**.
 6. **Share offline:** export a pack as `*.lightout.json` and import it on another device. The shape is validated before saving, so classmates can pass packs over Bluetooth or a flash drive with no data.
 
@@ -48,7 +48,7 @@ Most AI study tools are cloud-only, so they're useless at exactly the moment a s
 | Build pack | ☁️ Cloud (`ONLY_IN_CLOUD`) | Heavy and one-time: many pages of input, PDFs (which on-device can't read), a long structured output with 30+ questions. Worth one data hit while there's light. |
 | Read, MCQ quiz, sharing | 📦 Local (no AI) | The pack already holds the explanations, answers and explanations. Zero data and zero battery spent on inference. |
 | Mark short answers | 🔒 On-device (`ONLY_ON_DEVICE` offline, `PREFER_ON_DEVICE` online) | Frequent and personal: dozens of small calls per study session. Free, private, works in a blackout. |
-| Ask about this pack | 🔒 On-device first | Same reasons; the retrieved context is capped to fit Nano's window. |
+| Ask about this pack | 🔒 `ONLY_ON_DEVICE` offline, `PREFER_ON_DEVICE` online | Same reasons; the prompt is kept under 24,000 characters to fit Nano's window. |
 | Quick tools on long notes (>20k chars) | ☁️ Cloud | Too long for Nano's context window. |
 | Retry in cloud | ☁️ Cloud (`ONLY_IN_CLOUD`), only on tap | The student chooses to spend data for a second opinion; never automatic. |
 | Self-test / benchmark | 🔒 On-device (+ ☁️ cloud for the benchmark) | Proves the offline brain works and shows the speed and data trade-off. |
@@ -115,6 +115,23 @@ Every result that ran on-device (Quick tools, short-answer marking and Ask about
 - The on-device answer stays above it in a collapsible block, so you can compare the two.
 - It's hidden offline and only runs when tapped. A cloud re-mark doesn't change your quiz progress; only the original mark counts.
 
+## Ask about this pack (offline)
+
+All answers go through Firebase AI Logic (`runPrompt` → `generateContentStream`); nothing calls Chrome's `LanguageModel` API directly for answers.
+
+- **Routing:** offline → `ONLY_ON_DEVICE`; online → `PREFER_ON_DEVICE`. If you're offline and the offline brain isn't available (a phone, another browser, or not downloaded), no call is made. Instead: *"Asking questions offline needs the offline brain (Chrome on a laptop). You can still read this pack and take the quiz."* with **Read** and **Quiz** buttons. (A saved answer to the exact same question can still be shown.)
+- **Context selection (on device, no AI):** the question and each section are lowercased, stripped of common English stopwords and lightly stemmed (-s, -es, -ing, -ed). Sections score title matches ×3, key terms ×2 and explanation/example ×1; the top 2–3 are used. If nothing scores above 0, the pack summary + first section are used.
+- **Budget:** the whole prompt (instructions + context + history + question) stays under **24,000 characters**, leaving room for the answer within Nano's 9,216-token limit. Context is trimmed first, then the oldest history.
+- **Prompt:** answer *only* from the study material, in simple language, in about 150 words at most; if it isn't covered, say *"This isn't covered in this pack"* and suggest the closest section title.
+- **Follow-ups:** the last 3 Q&A turns for the pack go inside the prompt (on-device is single-turn), so "explain that simpler" works. History is saved per pack in IndexedDB, shown under the answer, with **Clear**.
+- **Reliability:** streaming; a 60 s timeout ("Taking too long — try a shorter question."; a cloud request is also aborted); one short friendly message on errors, with the raw error in `?debug=1`; the Ask button is disabled while a question runs.
+- **Each answer** shows the source badge and time, "🔒 Your notes never left this device" for on-device answers, **Retry in cloud** only when online, and *Answered from: <section titles>*. Tap a title to jump to it in Read.
+- **Saved answers:** the same question with the same earlier conversation shows instantly with a **Saved answer** label; **Regenerate** asks again.
+
+### App Check and offline answers
+
+Firebase AI Logic attaches App Check tokens **only to cloud requests**. In `@firebase/ai`, the token is fetched inside the cloud request's header builder, and the `ONLY_ON_DEVICE` / on-device branch of `PREFER_ON_DEVICE` never calls it. So **App Check can't block or delay on-device answers offline**. This was verified with App Check enabled and no way to reach reCAPTCHA: the on-device answer arrived in about 0.4 s with zero network calls. While online, Lightout still calls `getToken(appCheck, false)` once on load, so a valid token is cached for the first cloud call after reconnecting. `?debug=1` shows the prefetch result and has an **Offline Q&A test** (a sample question against the bundled pack, `ONLY_ON_DEVICE`, with pass/fail, time and the selected sections).
+
 ## Troubleshooting: `?debug=1`
 
 Open the app with **`?debug=1`** (e.g. `https://<project>.web.app/?debug=1`) to show a diagnostics panel. It contains nothing secret, so it's safe to screenshot.
@@ -122,7 +139,8 @@ Open the app with **`?debug=1`** (e.g. `https://<project>.web.app/?debug=1`) to 
 - The App Check provider (`ReCaptchaEnterpriseProvider`), whether `VITE_RECAPTCHA_ENTERPRISE_SITE_KEY` was set in this build (first 6 characters only), whether App Check is initialized, and whether debug-token mode is on
 - The result of `getToken(appCheck, false)`: success with the token length, or the full error (with a 15 s timeout in case the reCAPTCHA Enterprise script is blocked)
 - `navigator.onLine`, Firebase `projectId` and `appId`, the page origin and the cloud model name
-- A one-click `ONLY_IN_CLOUD` test call, and the raw error from the last failed AI call
+- The App Check token prefetch (on load, when online) and a note that on-device calls don't use App Check
+- A one-click `ONLY_IN_CLOUD` test call, an **Offline Q&A test** (`ONLY_ON_DEVICE`, bundled sample pack) and the raw error from the last failed AI call
 
 | What you see | Likely cause |
 |---|---|

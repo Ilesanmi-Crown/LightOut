@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getOnDeviceStatus } from "./ai.js";
 import { useOnline, useConnectionBanner } from "./hooks.js";
 import { refreshConfig } from "./lib/config.js";
+import { prefetchAppCheckToken } from "./lib/appCheckStatus.js";
 import { syncPacks } from "./lib/sync.js";
 import { validatePack } from "./lib/packs.js";
 import OfflineBrainPanel from "./components/OfflineBrainPanel.jsx";
@@ -80,6 +81,7 @@ export default function App() {
     if (!online) return;
     let alive = true;
     refreshConfig();
+    prefetchAppCheckToken(); // non-blocking: caches a token for the next cloud call
     setSyncState("syncing");
     syncPacks(validatePack).then((res) => {
       if (!alive) return;
@@ -180,7 +182,7 @@ export default function App() {
             }}
           />
         )}
-        {route.name === "pack" && <PackView packId={route.id} online={online} onStatus={setStatus} onBack={() => go("packs")} />}
+        {route.name === "pack" && <PackView packId={route.id} online={online} status={status} onStatus={setStatus} onBack={() => go("packs")} />}
         {route.name === "tools" && <QuickTools online={online} onStatus={setStatus} />}
         {route.name === "brain" && <OfflineBrain status={status} online={online} onRefresh={refreshStatus} />}
       </div>

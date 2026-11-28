@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { getQuestionStats, recordAnswer, resetQuestionStats } from "../lib/db.js";
 import { addOfflineAnswer } from "../lib/savings.js";
-import { pickRound, roundFocus, markAnswer, markInCloud, buildAskContext, askPrompt } from "../lib/study.js";
-import { runPrompt, prepareRoute, friendlyError, InferenceMode } from "../ai.js";
+import { pickRound, roundFocus, markAnswer, markInCloud } from "../lib/study.js";
+import { friendlyError } from "../ai.js";
 import CloudRetry from "../components/CloudRetry.jsx";
 import ErrorNote from "../components/ErrorNote.jsx";
 import { SourceBadge, PrivacyLine } from "../components/AIMeta.jsx";
@@ -253,118 +253,6 @@ function QuestionCard({ q, section, prevWrong, online, onStatus, onAnswered, onN
         </div>
       )}
     </section>
-  );
-}
-
-// ======================= Ask about this pack =======================
-export function PackAsk({ pack, online, onStatus }) {
-  const [question, setQuestion] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [answer, setAnswer] = useState(null); // { text, source, ms, streaming, sections, matched }
-  const [error, setError] = useState("");
-  const answerRef = useRef(null);
-
-  async function ask(e) {
-    e?.preventDefault();
-    const q = question.trim();
-    if (!q) return;
-    setError("");
-    setAnswer(null);
-    const { context, sections, matched } = buildAskContext(pack, q);
-    const parts = askPrompt({ pack, question: q, context });
-    const route = await prepareRoute({ chars: parts[0].text.length, online });
-    if (route.status) onStatus(route.status);
-    if (route.error) {
-      setError(route.error);
-      return;
-    }
-    setBusy(true);
-    const start = performance.now();
-    try {
-      const { text, source } = await runPrompt({
-        taskKey: "ask",
-        parts,
-        mode: route.mode,
-        onText: (t) => setAnswer({ id: start, text: t, streaming: true, sections, matched, parts }),
-      });
-      setAnswer({ id: start, text, source, ms: performance.now() - start, streaming: false, sections, matched, parts });
-      requestAnimationFrame(() => answerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
-    } catch (err) {
-      console.error(err);
-      setAnswer(null);
-      setError(friendlyError(err, { online }));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const suggestions = pack.sections.slice(0, 3).map((s) => `Explain ${s.title.toLowerCase()} with an example`);
-
-  return (
-    <div className="pack-ask">
-      <form className="panel ask-form" onSubmit={ask}>
-        <label htmlFor="ask-q">Ask about this pack</label>
-        <div className="ask-row">
-          <input
-            id="ask-q"
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Ask a question about this pack…"
-            maxLength={400}
-            disabled={busy}
-          />
-          <button className="cta" type="submit" disabled={busy || !question.trim()}>
-            <span>{busy ? "Thinking…" : "Ask"}</span>
-            <span className="arrow" aria-hidden="true">
-              {busy ? <span className="btn-spinner" /> : "→"}
-            </span>
-          </button>
-        </div>
-        <div className="suggest">
-          {suggestions.map((s) => (
-            <button type="button" key={s} className="ghost" onClick={() => setQuestion(s)} disabled={busy}>
-              {s}
-            </button>
-          ))}
-        </div>
-      </form>
-
-      {error && (
-        <ErrorNote error={error} />
-      )}
-
-      {busy && !answer && (
-        <section className="panel loading" aria-live="polite">
-          <div className="pulse" /> Reading the pack…
-        </section>
-      )}
-
-      {answer && (
-        <section className="panel result" ref={answerRef}>
-          <div className="result-head">
-            <h2>Answer</h2>
-            <SourceBadge source={answer.source} ms={answer.ms} streaming={answer.streaming} />
-          </div>
-          <CloudRetry
-            key={answer.id}
-            source={answer.streaming ? null : answer.source}
-            online={online}
-            deviceSummary={<SourceBadge source={answer.source} ms={answer.ms} />}
-            renderData={(text, { streaming }) => <div className={`prose ${streaming ? "is-streaming" : ""}`}>{text}</div>}
-            onRetry={async (onText) => {
-              const r = await runPrompt({ taskKey: "ask", parts: answer.parts, mode: InferenceMode.ONLY_IN_CLOUD, onText });
-              return { data: r.text, source: r.source, ms: r.ms };
-            }}
-          >
-            <div className={`prose ${answer.streaming ? "is-streaming" : ""}`}>{answer.text}</div>
-            {!answer.streaming && <PrivacyLine source={answer.source} />}
-          </CloudRetry>
-          <p className="hint route-note">
-            {answer.matched ? "From" : "Closest sections"}: {answer.sections.map((s) => s.title).join(" · ")}
-          </p>
-        </section>
-      )}
-    </div>
   );
 }
 

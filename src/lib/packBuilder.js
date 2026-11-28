@@ -2,13 +2,14 @@
 //   Stage 1  outline  { title, courseCode, summary, sections: [{ id, title }] }
 //   Stage 2  in parallel: sections A, sections B, questions A, questions B (each retried once)
 // The pack is saved after Stage 1 and updated as each part arrives; screens subscribe via onPackChange().
-import { runPrompt, parseJson, InferenceMode, isThinkingConfigError, disableThinkingConfig, thinkingStatus } from "../ai.js";
+import { runPrompt, parseJson, InferenceMode, isThinkingConfigError, disableThinkingConfig, thinkingStatus, isOverloadError } from "../ai.js";
 import { local, getPack, putPack } from "./db.js";
 import { pushPack } from "./sync.js";
 import { getConfig } from "./config.js";
 import { getPreparedFile } from "./fileCache.js";
 import {
   buildMaterialParts,
+  transcriptMaterial,
   outlinePrompt,
   sectionsPrompt,
   questionsPrompt,
@@ -21,6 +22,27 @@ import {
 } from "./packs.js";
 
 export const PARTS = ["sectionsA", "sectionsB", "questionsA", "questionsB"];
+export const MAX_PARALLEL_CLOUD_CALLS = 2; // fewer simultaneous calls = fewer 429/500s
+
+const partsBytes = (parts) => parts.reduce((n, p) => n + (p.text ? new TextEncoder().encode(p.text).length : 0) + (p.inlineData?.data?.length || 0), 0);
+
+/** Runs async jobs with at most `limit` in flight; the rest wait in order. */
+async function runLimited(jobs, limit) {
+  const results = new Array(jobs.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < jobs.length) {
+      const i = next++;
+      try {
+        results[i] = { status: "fulfilled", value: await jobs[i]() };
+      } catch (reason) {
+        results[i] = { status: "rejected", reason };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, jobs.length) }, worker));
+  return results;
+}
 
 // ---------- live updates ----------
 const listeners = new Map(); // packId -> Set(fn)
@@ -57,15 +79,16 @@ async function saveTimings(t) {
 }
 
 // ---------- one cloud JSON call (minimal thinking; falls back if the model rejects it) ----------
+// runPrompt already retries 429/500/503 (2 s, 5 s, 10 s) and then tries the fallback model once.
 async function cloudJson(taskKey, parts, label) {
   try {
     const r = await runPrompt({ taskKey, parts, mode: InferenceMode.ONLY_IN_CLOUD, label, countSavings: false });
-    return { data: parseJson(r.text), source: r.source };
+    return { data: parseJson(r.text), source: r.source, model: r.model };
   } catch (e) {
     if (!isThinkingConfigError(e)) throw e;
     disableThinkingConfig(); // model/SDK doesn't take the thinking setting: carry on without it
     const r = await runPrompt({ taskKey, parts, mode: InferenceMode.ONLY_IN_CLOUD, label, countSavings: false });
-    return { data: parseJson(r.text), source: r.source };
+    return { data: parseJson(r.text), source: r.source, model: r.model };
   }
 }
 
@@ -115,7 +138,8 @@ async function runParts({ packId, material, outline, parts, timings, t0 }) {
     for (let attempt = 1; attempt <= 2; attempt++) {
       call.attempts = attempt;
       try {
-        const { data } = await cloudJson(spec.task, [{ text: spec.prompt() }, ...material], `pack:${key}`);
+        const { data, model } = await cloudJson(spec.task, [{ text: spec.prompt() }, ...material], `pack:${key}`);
+        call.model = model;
         await updatePack(packId, (p) => {
           const next = { ...p, build: { ...p.build, parts: { ...p.build.parts, [key]: "done" } } };
           if (spec.task === "packSections") {
@@ -132,6 +156,7 @@ async function runParts({ packId, material, outline, parts, timings, t0 }) {
       } catch (e) {
         lastErr = e;
         console.warn(`[Lightout] Pack part ${key} failed (attempt ${attempt})`, e);
+        if (isOverloadError(e)) break; // runPrompt already retried + tried the fallback model
       }
     }
     call.ms = Math.round(performance.now() - start);
@@ -140,7 +165,8 @@ async function runParts({ packId, material, outline, parts, timings, t0 }) {
     throw lastErr;
   };
 
-  await Promise.allSettled(parts.map(runOne));
+  timings.uploadBytesPerCall = partsBytes(material);
+  await runLimited(parts.map((key) => () => runOne(key)), MAX_PARALLEL_CLOUD_CALLS);
   active.delete(packId);
   timings.stage2Ms = Math.round(performance.now() - stage2Start);
 
@@ -176,9 +202,23 @@ export async function startBuild({ title, courseCode, pasted, items, t0 = perfor
     calls: {},
   };
   const s1 = performance.now();
-  const { data } = await cloudJson("packOutline", [{ text: outlinePrompt({ title, courseCode }) }, ...material], "pack:outline");
+  const hasFiles = material.some((p) => p.inlineData);
+  let data;
+  let stage2Material = material;
+  try {
+    // With photos/PDFs, the outline call also transcribes them so Stage 2 gets text instead of re-uploads.
+    ({ data } = await cloudJson("packOutline", [{ text: outlinePrompt({ title, courseCode, wantTranscript: hasFiles }) }, ...material], "pack:outline"));
+  } catch (e) {
+    if (!hasFiles || isOverloadError(e) || !/format|JSON/i.test(String(e?.message))) throw e;
+    // A very long transcript can overflow the output; fall back to an outline without it.
+    ({ data } = await cloudJson("packOutline", [{ text: outlinePrompt({ title, courseCode }) }, ...material], "pack:outline"));
+  }
+  const transcript = typeof data?.transcript === "string" ? data.transcript.trim() : "";
+  if (hasFiles && transcript.length > 40) stage2Material = transcriptMaterial(material, transcript);
   timings.stage1Ms = Math.round(performance.now() - s1);
   timings.thinking = thinkingStatus(); // may have changed if the model rejected it
+  timings.transcriptChars = transcript.length;
+  timings.originalUploadBytes = partsBytes(material);
   const outline = normaliseOutline(data, { title, courseCode });
 
   const now = Date.now();
@@ -200,10 +240,11 @@ export async function startBuild({ title, courseCode, pasted, items, t0 = perfor
     title,
     courseCode,
     pasted,
-    files: items.filter((it) => it.hash).map((it) => ({ name: it.name, hash: it.hash })),
+    files: items.filter((it) => it.hash).map((it) => ({ name: it.name, hash: it.hash, kind: it.payload?.text ? "text" : "file" })),
+    transcript: stage2Material === material ? "" : transcript, // lets "Try again" resume without the files
   });
   timings.outlineSavedMs = Math.round(performance.now() - t0);
-  const done = runParts({ packId: pack.id, material, outline, parts: PARTS, timings, t0 });
+  const done = runParts({ packId: pack.id, material: stage2Material, outline, parts: PARTS, timings, t0 });
   return { pack, done };
 }
 
@@ -220,13 +261,16 @@ export async function finishPack(packId) {
   if (!parts.length) return pack;
   const inputs = await local.buildInputs.get(packId);
   if (!inputs) throw new Error("This pack's original material isn't on this device. Build it again from your files.");
+  // With a saved transcript, photos/PDFs aren't needed (or re-uploaded) at all: only text files are reloaded.
   const items = [];
   for (const f of inputs.files) {
+    if (inputs.transcript && f.kind === "file") continue;
     const hit = await getPreparedFile(f.hash);
     if (!hit) throw new Error(`"${f.name}" isn't saved anymore. Build the pack again from your files.`);
     items.push({ name: f.name, payload: hit.payload });
   }
-  const material = buildMaterialParts({ pasted: inputs.pasted || "", items });
+  const full = buildMaterialParts({ pasted: inputs.pasted || "", items });
+  const material = inputs.transcript ? transcriptMaterial(full, inputs.transcript) : full;
   const outline = { title: pack.title, courseCode: pack.courseCode, summary: pack.summary, sections: pack.sections.map(({ id, title }) => ({ id, title })) };
   await updatePack(packId, (p) => ({
     ...p,

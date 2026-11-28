@@ -158,6 +158,18 @@ Open the app with **`?debug=1`** (e.g. `https://<project>.web.app/?debug=1`) to 
 | `getToken` succeeds, but the cloud call fails with 403 | **Not App Check.** Read `errorDetails.reason`: `SERVICE_DISABLED` (enable the Firebase AI Logic / Gemini Developer API), `API_KEY_HTTP_REFERRER_BLOCKED` or `API_KEY_SERVICE_BLOCKED` (the browser API key's restrictions in Google Cloud). |
 | 404 on the model | `cloud_model_name` isn't a valid model. |
 
+## Resilience to Gemini overload
+
+- **Retry with backoff:** any cloud call (Quick tools, Ask, marking, pack building) that fails with **HTTP 429, 500 or 503**, or a "high demand"/overloaded message, is retried automatically up to **3 times** after **2 s, 5 s and 10 s** (plus a little random jitter). The progress area shows *"Google's AI is busy — retrying (1/3)…"*. On-device-only calls are never retried, and a cancelled request (e.g. Ask's 60 s timeout) stops retrying.
+- **Fallback model:** if all retries fail, the same request is sent **once** to Remote Config's `cloud_fallback_model` (default `gemini-3.5-flash-lite`). `?debug=1` shows which model answered (*"… (FALLBACK after retries)"*), and each pack-build call's model appears in *Last pack build timings*.
+- **Gentler pack builds:** Stage 2 runs at most **2** cloud calls at a time and queues the rest.
+- **Less uploading:** when a pack has photos or PDFs, the Stage 1 outline call also returns a full **`transcript`** of them (structured output). Stage 2 then receives that transcript as plain text instead of the files, so a build uploads the files **once** instead of five times. If the transcript is missing or the output is cut off, Stage 2 falls back to the original files.
+- **Clear errors** (raw details under *Details*):
+  - 429 / 500 / 503 → *"Google's AI is busy right now. Try again in a minute."*
+  - fetch failed / offline → *"Couldn't reach the cloud. Check your data and try again."*
+  - App Check / 401 / 403 → *"The cloud refused this request. Try again later, or check Details."*
+- **Keep progress:** if the outline fails, New Pack offers **Try again**, which reuses the already-prepared files without reading or preparing them again. If a Stage 2 part fails, everything else is kept and the pack shows **Try again**, which re-runs only the failed part. That works after a reload too, using the saved transcript, so the photos and PDFs aren't uploaded again.
+
 ## Caching
 
 Lightout opens instantly, works offline after one online visit, and never repeats work it has already done.
@@ -243,6 +255,7 @@ firestore.rules          users can only read/write users/{uid}/**
    | Key | Type | Default |
    |---|---|---|
    | `cloud_model_name` | String | `gemini-3.8-flash` |
+   | `cloud_fallback_model` | String | `gemini-3.5-flash-lite` (used once after the main model fails all retries) |
    | `naira_per_mb` | Number | `1` (≈ ₦1,000 per GB) |
    | `pack_question_count` | Number | `30` |
 

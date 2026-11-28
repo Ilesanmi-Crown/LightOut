@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getToken } from "firebase/app-check";
 import { app, appCheck, appCheckDebugMode, APP_CHECK_PROVIDER, RECAPTCHA_ENTERPRISE_SITE_KEY } from "../firebase.js";
-import { errorDetails, formatRawError, getLastAIError, onLastAIError, safeJson } from "../lib/diagnostics.js";
+import { errorDetails, formatRawError, getLastAIError, onLastAIError, safeJson, getLastCloudModel, onLastCloudModel } from "../lib/diagnostics.js";
 import { getConfig } from "../lib/config.js";
 import { runPrompt, InferenceMode, InferenceSource, getOnDeviceStatus } from "../ai.js";
 import { getAppCheckPrefetch, onAppCheckPrefetch } from "../lib/appCheckStatus.js";
@@ -22,6 +22,8 @@ export default function DebugPanel({ online }) {
   const [prefetch, setPrefetch] = useState(getAppCheckPrefetch);
   const [qaTest, setQaTest] = useState({ state: "idle" });
   useEffect(() => onAppCheckPrefetch(setPrefetch), []);
+  const [lastModel, setLastModel] = useState(getLastCloudModel);
+  useEffect(() => onLastCloudModel(setLastModel), []);
   const [buildTimings, setBuildTimings] = useState(null);
   useEffect(() => {
     getLastBuildTimings().then(setBuildTimings);
@@ -128,7 +130,11 @@ export default function DebugPanel({ online }) {
     ["Firebase projectId", opts.projectId || "(missing)"],
     ["Firebase appId", opts.appId || "(missing)"],
     ["Page origin", window.location.origin],
-    ["Cloud model (Remote Config)", getConfig().cloud_model_name],
+    ["Cloud model (Remote Config)", `${getConfig().cloud_model_name} · fallback ${getConfig().cloud_fallback_model}`],
+    [
+      "Last cloud answer from",
+      lastModel ? `${lastModel.model}${lastModel.fallback ? " (FALLBACK after retries)" : ""} · ${lastModel.task} · ${lastModel.at}` : "none yet",
+    ],
   ];
 
   return (
@@ -219,13 +225,18 @@ export default function DebugPanel({ online }) {
 
 function formatBuildTimings(t) {
   const ms = (v) => (v == null ? "–" : `${(v / 1000).toFixed(2)}s`);
+  const kb = (b) => (b == null ? "–" : `${(b / 1024).toFixed(0)} KB`);
   const lines = [
     `${t.at} · model ${t.model} · thinking ${t.thinking}${t.finishing ? ` · finishing ${t.finishing.join(", ")}` : ""}`,
     t.finishing ? null : `Files wait:          ${ms(t.filesWaitMs)}`,
     t.finishing ? null : `Stage 1 (outline):   ${ms(t.stage1Ms)}   (pack opened at ${ms(t.outlineSavedMs)})`,
+    t.originalUploadBytes != null
+      ? `Upload per Stage 2 call: ${kb(t.uploadBytesPerCall)} (files ${kb(t.originalUploadBytes)}${t.transcriptChars ? `, replaced by a ${t.transcriptChars.toLocaleString()}-char transcript` : ", no transcript"})`
+      : null,
     `Stage 2 (parallel):  ${ms(t.stage2Ms)}`,
     ...Object.entries(t.calls || {}).map(
-      ([k, c]) => `  ${k.padEnd(11)} ${ms(c.ms).padStart(7)}  ${c.ok ? "ok" : "FAILED"}${c.attempts > 1 ? ` (${c.attempts} attempts)` : ""}${c.error ? ` · ${c.error}` : ""}`
+      ([k, c]) =>
+        `  ${k.padEnd(11)} ${ms(c.ms).padStart(7)}  ${c.ok ? "ok" : "FAILED"}${c.model ? ` · ${c.model}` : ""}${c.attempts > 1 ? ` (${c.attempts} attempts)` : ""}${c.error ? ` · ${c.error}` : ""}`
     ),
     t.finishing ? null : `Time to first section: ${ms(t.firstSectionMs)}`,
     `Total:               ${ms(t.totalMs)} · ${t.complete ? "complete" : "partial"}${t.questionTarget ? ` · target ${t.questionTarget} questions` : ""}`,

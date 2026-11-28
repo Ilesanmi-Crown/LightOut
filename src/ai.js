@@ -8,7 +8,8 @@ import {
 import { ai } from "./firebase.js";
 import { getConfig } from "./lib/config.js";
 import { addSavings } from "./lib/savings.js";
-import { formatRawError, setLastAIError } from "./lib/diagnostics.js";
+import { formatRawError, setLastAIError, setLastCloudModel } from "./lib/diagnostics.js";
+import { setCloudStatus } from "./lib/cloudStatus.js";
 import { recordCall } from "./lib/calls.js";
 
 export { InferenceMode, InferenceSource };
@@ -141,7 +142,10 @@ export const outlineSchema = Schema.object({
     courseCode: Schema.string(),
     summary: Schema.string(),
     sections: Schema.array({ items: Schema.object({ properties: { id: Schema.string(), title: Schema.string() } }) }),
+    // Full text of every attached photo/PDF, so Stage 2 can be sent text instead of re-uploading files.
+    transcript: Schema.string(),
   },
+  optionalProperties: ["transcript"],
 });
 
 export const sectionsSchema = Schema.object({
@@ -166,7 +170,7 @@ export const questionsSchema = Schema.object({
 
 export const PACK_TASKS = {
   // Pack-building calls use the lowest thinking setting the model supports (see thinkingFor()).
-  packOutline: { label: "Pack outline", json: true, schema: outlineSchema, maxOutputTokens: 4096, minimalThinking: true },
+  packOutline: { label: "Pack outline", json: true, schema: outlineSchema, maxOutputTokens: 32768, minimalThinking: true },
   packSections: { label: "Pack sections", json: true, schema: sectionsSchema, maxOutputTokens: 16384, minimalThinking: true },
   packQuestions: { label: "Pack questions", json: true, schema: questionsSchema, maxOutputTokens: 16384, minimalThinking: true },
   mark: { label: "Mark answer", json: true, schema: markSchema },
@@ -206,8 +210,8 @@ export function thinkingStatus() {
 // ---------- Model cache (one instance per task + mode + cloud model) ----------
 const modelCache = new Map();
 
-export function getModel(taskKey, mode) {
-  const cloudModel = getConfig().cloud_model_name;
+export function getModel(taskKey, mode, modelOverride) {
+  const cloudModel = modelOverride || getConfig().cloud_model_name;
   const task = ALL_TASKS[taskKey];
   const thinking = task?.minimalThinking ? thinkingFor(cloudModel) : null;
   const key = `${taskKey}:${mode}:${cloudModel}:${thinking ? JSON.stringify(thinking) : "-"}`;
@@ -322,13 +326,74 @@ function parseJson(text) {
  * we fall back to what the routing mode guarantees.
  * Every on-device call adds its request + response bytes to the savings counter.
  */
+// ---------- Resilience: retry Gemini overload errors, then try a fallback model once ----------
+export const RETRY_DELAYS_MS = [2000, 5000, 10000];
+const RETRYABLE_STATUS = new Set([429, 500, 503]);
+
+/** 429 / 500 / 503 or a "high demand"/overloaded message from the cloud. */
+export function isOverloadError(err) {
+  const status = err?.customErrorData?.status;
+  if (RETRYABLE_STATUS.has(status)) return true;
+  const msg = `${err?.message || ""} ${err?.customErrorData?.statusText || ""}`;
+  return /\b(429|500|503)\b|high demand|overloaded|RESOURCE_EXHAUSTED|UNAVAILABLE|INTERNAL/i.test(msg) && err?.code !== "api-not-enabled";
+}
+
+function sleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+    const t = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(t);
+      reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+    }, { once: true });
+  });
+}
+
+let callSeq = 0;
+
+/**
+ * Runs a prompt through Firebase AI Logic. For cloud calls that fail with 429/500/503, retries up to
+ * 3 times (2 s, 5 s, 10 s + jitter), then once on Remote Config's cloud_fallback_model.
+ * On-device-only calls are never retried (there's no cloud to be busy).
+ */
 export async function runPrompt(args) {
+  const callId = ++callSeq;
+  const main = getConfig().cloud_model_name;
   try {
-    return await runPromptInner(args);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const r = await runPromptInner(args);
+        noteModel(r, main, false, args);
+        return { ...r, model: r.source === InferenceSource.IN_CLOUD ? main : r.source === InferenceSource.ON_DEVICE ? "gemini-nano" : main };
+      } catch (err) {
+        const retryable = args.mode !== InferenceMode.ONLY_ON_DEVICE && isOverloadError(err) && !args.signal?.aborted;
+        if (!retryable) throw err;
+        if (attempt < RETRY_DELAYS_MS.length) {
+          setCloudStatus(callId, { kind: "retry", attempt: attempt + 1, max: RETRY_DELAYS_MS.length, task: args.taskKey });
+          const scale = globalThis.__LIGHTOUT_RETRY_SCALE ?? 1; // override exists only for automated tests
+          await sleep((RETRY_DELAYS_MS[attempt] + Math.round(Math.random() * 600)) * scale, args.signal);
+          continue;
+        }
+        // All retries failed on the main model: one try on the fallback model.
+        const fallback = getConfig().cloud_fallback_model;
+        if (!fallback || fallback === main) throw err;
+        setCloudStatus(callId, { kind: "fallback", model: fallback, task: args.taskKey });
+        const r = await runPromptInner({ ...args, mode: InferenceMode.ONLY_IN_CLOUD, modelOverride: fallback });
+        noteModel(r, fallback, true, args);
+        return { ...r, model: fallback, usedFallback: true };
+      }
+    }
   } catch (err) {
     setLastAIError(err, { task: args.taskKey, mode: args.mode, online: navigator.onLine });
     throw err;
+  } finally {
+    setCloudStatus(callId, null);
   }
+}
+
+function noteModel(r, model, fallback, args) {
+  if (r.source !== InferenceSource.IN_CLOUD) return;
+  setLastCloudModel({ model, fallback, task: args.label || args.taskKey, at: new Date().toISOString() });
 }
 
 /**
@@ -336,8 +401,8 @@ export async function runPrompt(args) {
  * `countSavings: false` keeps tests/benchmarks out of the data-saved total.
  * Returns { text, source, ms, requestBytes, responseBytes }.
  */
-async function runPromptInner({ taskKey, parts, mode, onText, label, countSavings = true, signal }) {
-  const model = getModel(taskKey, mode);
+async function runPromptInner({ taskKey, parts, mode, onText, label, countSavings = true, signal, modelOverride }) {
+  const model = getModel(taskKey, mode, modelOverride);
   const task = ALL_TASKS[taskKey];
   const start = performance.now();
   let response;
@@ -450,18 +515,19 @@ export function friendlyError(err, { online }) {
   const details = formatRawError(err);
   const msg = String(err?.message || "");
   const status = err?.customErrorData?.status;
+  const appCheck = /app.?check/i.test(`${msg} ${err?.code || ""}`);
   let text;
   if (!online) {
     text = /on-device model is not available|not available in this environment/i.test(msg) || ["api-not-enabled", "unsupported"].includes(err?.code)
       ? "The offline brain isn't ready. Connect once and download it from Offline brain."
-      : "That didn't work offline. Try a shorter piece of text.";
-  } else if (status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(msg)) {
-    text = "The cloud is busy right now. Wait a minute and try again.";
-  } else if (status === 401 || status === 403) {
+      : "Couldn't reach the cloud. Check your data and try again.";
+  } else if (appCheck || status === 401 || status === 403) {
     text = "The cloud refused this request. Try again later, or check Details.";
+  } else if (isOverloadError(err)) {
+    text = "Google's AI is busy right now. Try again in a minute.";
   } else if (status === 404) {
     text = "The cloud model wasn't found. Check Details.";
-  } else if (/fetch|network|Failed to fetch|ERR_/i.test(msg)) {
+  } else if (/fetch|network|Failed to fetch|ERR_|offline/i.test(msg)) {
     text = "Couldn't reach the cloud. Check your data and try again.";
   } else if (/too large|exceed/i.test(msg)) {
     text = "That was too much for the AI. Try a shorter piece.";

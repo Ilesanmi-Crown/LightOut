@@ -6,6 +6,7 @@ import { friendlyError } from "../ai.js";
 import { useElapsed } from "../hooks.js";
 import { SourceBadge } from "../components/AIMeta.jsx";
 import ErrorNote from "../components/ErrorNote.jsx";
+import RetryNotice from "../components/RetryNotice.jsx";
 import { SAMPLE_NOTES } from "../sampleNotes.js";
 
 const KIND_LABEL = { pdf: "PDF", docx: "Word", txt: "Text", image: "Photo" };
@@ -33,6 +34,7 @@ export default function NewPack({ online, onCreated }) {
   const [stage, setStage] = useState(null);
   const [error, setError] = useState("");
   const [built, setBuilt] = useState(null); // { ms, source }
+  const [canRetry, setCanRetry] = useState(false); // a build failed: offer "Try again" (prepared files are kept)
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef(null);
   const cameraInput = useRef(null);
@@ -79,6 +81,7 @@ export default function NewPack({ online, onCreated }) {
 
   async function handleBuild() {
     setError("");
+    setCanRetry(false);
     setBuilt(null);
     if (!online) {
       setError("Building a pack needs internet. Do it while you have light and data.");
@@ -133,6 +136,7 @@ export default function NewPack({ online, onCreated }) {
       setStage(null);
       // Our own validation errors (no Firebase error code) get a short explanation;
       // everything from the SDK/network is shown raw.
+      setCanRetry(true);
       const fromSdk = Boolean(e?.code) || /FirebaseError|AIError/.test(e?.name || "");
       setError(fromSdk ? friendlyError(e, { online: navigator.onLine }) : { text: "The pack didn't come out right. Try again.", details: String(e?.message || e) });
     }
@@ -288,10 +292,22 @@ export default function NewPack({ online, onCreated }) {
             <li className="stage-hint">This can take a minute.</li>
           </ol>
         )}
+        {building && <RetryNotice />}
 
         {built && <SourceBadge source={built.source} ms={built.ms} />}
 
         <ErrorNote error={error} />
+        {canRetry && !building && (
+          <div className="row-actions">
+            <button className="cta small" onClick={handleBuild} disabled={!online}>
+              <span>Try again</span>
+              <span className="arrow" aria-hidden="true">
+                ↻
+              </span>
+            </button>
+            <span className="hint inline">Your files are already prepared, so nothing is read again.</span>
+          </div>
+        )}
       </section>
     </>
   );

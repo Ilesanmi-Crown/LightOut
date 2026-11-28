@@ -5,6 +5,7 @@ import { pickRound, roundFocus, markAnswer, markInCloud } from "../lib/study.js"
 import { friendlyError } from "../ai.js";
 import CloudRetry from "../components/CloudRetry.jsx";
 import ErrorNote from "../components/ErrorNote.jsx";
+import RetryNotice from "../components/RetryNotice.jsx";
 import { SourceBadge, PrivacyLine } from "../components/AIMeta.jsx";
 
 const ROUND_SIZE = 10;
@@ -240,9 +241,8 @@ function QuestionCard({ q, section, prevWrong, online, onStatus, onAnswered, onN
       )}
 
 
-      {error && (
-        <ErrorNote error={error} />
-      )}
+      {marking && <RetryNotice />}
+      <ErrorNote error={error} />
 
       {answered && (
         <div className="row-actions end">

@@ -63,6 +63,21 @@ export function onLastAIError(fn) {
   return () => listeners.delete(fn);
 }
 
+// ---------- which cloud model answered last ----------
+let lastCloudModel = null;
+const modelListeners = new Set();
+export function setLastCloudModel(info) {
+  lastCloudModel = info;
+  modelListeners.forEach((fn) => fn(info));
+}
+export function getLastCloudModel() {
+  return lastCloudModel;
+}
+export function onLastCloudModel(fn) {
+  modelListeners.add(fn);
+  return () => modelListeners.delete(fn);
+}
+
 export function isDebug() {
   try {
     return new URLSearchParams(window.location.search).get("debug") === "1";

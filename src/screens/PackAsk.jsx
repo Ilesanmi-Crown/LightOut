@@ -4,6 +4,7 @@ import { askPack, askRoute, getHistory, addHistory, clearHistory, isTimeout } fr
 import { SourceBadge, PrivacyLine } from "../components/AIMeta.jsx";
 import CloudRetry from "../components/CloudRetry.jsx";
 import ErrorNote from "../components/ErrorNote.jsx";
+import RetryNotice from "../components/RetryNotice.jsx";
 
 const UNAVAILABLE_TEXT =
   "Asking questions offline needs the offline brain (Chrome on a laptop). You can still read this pack and take the quiz.";
@@ -119,6 +120,7 @@ export default function PackAsk({ pack, online, status, goTo }) {
         )}
       </form>
 
+      {busy && <RetryNotice />}
       <ErrorNote error={error} />
 
       {live && (

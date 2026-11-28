@@ -6,6 +6,7 @@ import { PackQuiz } from "./PackStudy.jsx";
 import PackAsk from "./PackAsk.jsx";
 import { onPackChange, isBuilding, missingParts, finishPack } from "../lib/packBuilder.js";
 import ErrorNote from "../components/ErrorNote.jsx";
+import RetryNotice from "../components/RetryNotice.jsx";
 import { friendlyError } from "../ai.js";
 
 const TABS = [
@@ -206,9 +207,9 @@ function BuildProgress({ pack, online }) {
       </ol>
       {!running && missing.length > 0 && (
         <div className="finish-row">
-          <span>Part of this pack didn&apos;t finish.</span>
+          <span>Part of this pack didn&apos;t finish. Everything else is saved.</span>
           <button className="cta small" onClick={finish} disabled={finishing || !online}>
-            <span>{finishing ? "Finishing…" : "Finish this pack"}</span>
+            <span>{finishing ? "Trying again…" : "Try again"}</span>
             <span className="arrow" aria-hidden="true">
               {finishing ? <span className="btn-spinner" /> : "→"}
             </span>
@@ -216,6 +217,7 @@ function BuildProgress({ pack, online }) {
           {!online && <span className="hint inline">Needs internet.</span>}
         </div>
       )}
+      {(running || finishing) && <RetryNotice />}
       <ErrorNote error={error} />
     </div>
   );

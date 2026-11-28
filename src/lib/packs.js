@@ -106,7 +106,7 @@ export function buildMaterialParts({ pasted = "", items = [] }) {
   return parts;
 }
 
-export function outlinePrompt({ title, courseCode }) {
+export function outlinePrompt({ title, courseCode, wantTranscript = false }) {
   return `${ROLE}
 
 STEP 1 of 2: plan the pack. Course: ${courseCode || "(infer from the materials)"}. Pack title: ${title || "(infer a short, clear title)"}.
@@ -114,7 +114,22 @@ Return ONLY JSON matching the schema:
 - "title" and "courseCode" (use the ones above if given).
 - "summary": 3-5 sentences on what the pack covers.
 - "sections": 5 to 10 sections that follow the materials' structure, each with a short unique "id" (s1, s2, ...) and a clear "title".
-Do not write the section content yet.`;
+Do not write the section content yet.${
+    wantTranscript
+      ? `
+- "transcript": the FULL text of every attached photo and PDF, transcribed faithfully in reading order (keep headings,
+  lists, formulas, tables as plain text; for diagrams or graphs write a one-line [Diagram: ...] description). Start each
+  file with "=== <file name> ===". Don't summarise; this replaces the files for the next step.`
+      : ""
+  }`;
+}
+
+/** Stage 2 material when a transcript is available: the text parts plus the transcript, no images/PDFs. */
+export function transcriptMaterial(material, transcript) {
+  return [
+    ...material.filter((p) => p.text && !p.text.startsWith("Attached file:")),
+    { text: `TRANSCRIPT OF THE ATTACHED PHOTOS AND PDFS:\n"""\n${transcript.trim()}\n"""` },
+  ];
 }
 
 const outlineText = (outline) =>

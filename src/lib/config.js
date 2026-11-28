@@ -5,6 +5,8 @@ import { remoteConfig } from "../firebase.js";
 
 export const CONFIG_DEFAULTS = {
   cloud_model_name: import.meta.env.VITE_CLOUD_MODEL || "gemini-3.8-flash",
+  // Used once, after the main model has failed all retries with 429/500/503.
+  cloud_fallback_model: "gemini-3.5-flash-lite",
   // Rough Nigerian mobile-data price: ~₦1,000 per GB. Tune it in Remote Config.
   naira_per_mb: 1,
   pack_question_count: 30,
@@ -18,6 +20,7 @@ function read() {
   try {
     return {
       cloud_model_name: getString(remoteConfig, "cloud_model_name") || CONFIG_DEFAULTS.cloud_model_name,
+      cloud_fallback_model: getString(remoteConfig, "cloud_fallback_model") || CONFIG_DEFAULTS.cloud_fallback_model,
       naira_per_mb: getNumber(remoteConfig, "naira_per_mb") || CONFIG_DEFAULTS.naira_per_mb,
       pack_question_count: Math.max(10, Math.min(60, getNumber(remoteConfig, "pack_question_count") || CONFIG_DEFAULTS.pack_question_count)),
     };

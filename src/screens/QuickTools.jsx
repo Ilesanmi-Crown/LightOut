@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { TASKS, prepareRoute, runTask, friendlyError, ON_DEVICE_CHAR_LIMIT, InferenceSource, InferenceMode } from "../ai.js";
 import CloudRetry from "../components/CloudRetry.jsx";
 import ErrorNote from "../components/ErrorNote.jsx";
+import RetryNotice from "../components/RetryNotice.jsx";
 import { answerKey, getAnswer, putAnswer } from "../lib/answerCache.js";
 import { sha256 } from "../lib/hash.js";
 import Flashcards from "../components/Flashcards.jsx";
@@ -234,6 +235,7 @@ export default function QuickTools({ online, onStatus }) {
       {busy && !result?.streaming && (
         <section className="panel loading" aria-live="polite">
           <div className="pulse" /> Working on {TASKS[busy].label.toLowerCase()}…
+          <RetryNotice />
         </section>
       )}
 

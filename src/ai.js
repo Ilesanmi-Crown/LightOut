@@ -170,15 +170,26 @@ export function getModel(taskKey, mode) {
 /**
  * Returns "unsupported" | "unavailable" | "downloadable" | "downloading" | "available".
  */
-export async function getOnDeviceStatus() {
-  if (typeof LanguageModel === "undefined") return "unsupported";
-  try {
-    // eslint-disable-next-line no-undef
-    return await LanguageModel.availability(CREATE_OPTIONS);
-  } catch (e) {
-    console.warn("LanguageModel.availability failed", e);
-    return "unavailable";
+let statusCache = null; // Promise<status>, cached for the session
+
+/**
+ * On-device model status, cached for the session. Pass { refresh: true } after a download
+ * or when the Offline brain screen opens.
+ */
+export function getOnDeviceStatus({ refresh = false } = {}) {
+  if (!statusCache || refresh) {
+    statusCache = (async () => {
+      if (typeof LanguageModel === "undefined") return "unsupported";
+      try {
+        // eslint-disable-next-line no-undef
+        return await LanguageModel.availability(CREATE_OPTIONS);
+      } catch (e) {
+        console.warn("LanguageModel.availability failed", e);
+        return "unavailable";
+      }
+    })();
   }
+  return statusCache;
 }
 
 /** Must be called from a user gesture (button click). */

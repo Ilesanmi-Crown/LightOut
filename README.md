@@ -85,10 +85,10 @@ The original one-off tools are still there under **Quick tools**: **Summarize**,
 ## Features shared across the app
 
 - **Offline banner:** "⚡ No light, no data? Lightout is still working." while offline; "Back online — cloud available again" for 3 seconds on reconnect.
-- **How it works strip** under the header. On browsers without the on-device model, a note explains that offline mode needs Chrome desktop v139+ and that the cloud still works.
+- **Home hero** with three steps (upload → build → study offline) and two actions: *Try a sample pack* and *Build your own*. Browsers without the on-device model see "Not supported on this browser" on the Offline brain screen (the header chip links there).
 - **Privacy line** under every on-device result: "🔒 Your notes never left this device."
 - **PWA:** the app shell, fonts and sample pack are precached, so the app opens with no network.
-- **Raw errors:** when a call fails, the app shows the SDK's actual error (name, code, message, and HTTP status, statusText and errorDetails) instead of a guessed summary.
+- **Errors:** one short sentence with what to do next; the SDK's raw error (name, code, message, HTTP status, statusText, errorDetails) is behind a *Details* toggle and in `?debug=1`.
 
 ## Offline Brain screen
 
@@ -130,6 +130,23 @@ Open the app with **`?debug=1`** (e.g. `https://<project>.web.app/?debug=1`) to 
 | `getToken` fails (often `appCheck/fetch-status-error`, HTTP 400) | The site key in the build doesn't match the one registered for this app under App Check → **Fraud Defense**, the key doesn't list your domain, the key is a checkbox (not **score-based**) key, or the app is still registered with a different provider (e.g. reCAPTCHA v3). |
 | `getToken` succeeds, but the cloud call fails with 403 | **Not App Check.** Read `errorDetails.reason`: `SERVICE_DISABLED` (enable the Firebase AI Logic / Gemini Developer API), `API_KEY_HTTP_REFERRER_BLOCKED` or `API_KEY_SERVICE_BLOCKED` (the browser API key's restrictions in Google Cloud). |
 | 404 on the model | `cloud_model_name` isn't a valid model. |
+
+## Caching
+
+Lightout opens instantly, works offline after one online visit, and never repeats work it has already done.
+
+| Layer | What's cached | Where | Rules |
+|---|---|---|---|
+| **App shell** | All built JS (incl. lazy chunks and the file-prep worker), CSS, `index.html`, icons, manifest, Latin fonts and the bundled sample pack (part of the JS) | Service worker precache (Workbox via `vite-plugin-pwa`) | `autoUpdate`: new versions install in the background and take over on the next load; a dismissible "Updated — refresh for the latest version" toast appears instead of an auto-reload. `navigateFallback` → `index.html`. Old caches are cleaned up. |
+| **Fonts** | Any font file not in the precache (other subsets; Google Fonts if ever added) | Runtime cache, CacheFirst, 1 year | |
+| **Hosting** | `/assets/**` (content-hashed) | Browser/CDN | `Cache-Control: public, max-age=31536000, immutable` |
+| | `/`, `/index.html`, `/sw.js`, `/registerSW.js`, `/manifest.webmanifest` | Browser/CDN | `Cache-Control: no-cache` (always revalidated, so updates are picked up) |
+| **Prepared files** | Each upload's final payload (text or base64 `inlineData`), keyed by the **SHA-256 of the file contents** | IndexedDB (`files`) | Checked before preparing; re-adding the same file is instant. ~50 MB cap, least-recently-used evicted. |
+| **AI answers** | Quick tools (summarize, explain, flashcards, quiz) and pack Q&A, keyed by SHA-256 of *(task + input text + attached file hashes + cloud model name)* | IndexedDB (`answers`) | Shown instantly with a **Saved answer** label and the original source badge, even offline. **Regenerate** and **Retry in cloud** always bypass it. Pack building isn't cached (packs are already saved). ~500 entries, oldest evicted. |
+| **Remote Config** | Last activated values | Firebase SDK storage | `minimumFetchIntervalMillis` = 1 hour; defaults + last activated values offline; never blocks the UI. |
+| **In memory** | Model instances per task + mode + cloud model; `LanguageModel.availability()` for the session | JS | Availability is re-checked after a download and whenever the Offline brain screen opens. |
+
+**Offline brain → Storage** has **Clear saved answers & file cache** (keeps packs, progress and settings) and **Delete all my data** (packs incl. their synced copies, progress, savings, call log, caches and saved notes).
 
 ## How hybrid routing works
 

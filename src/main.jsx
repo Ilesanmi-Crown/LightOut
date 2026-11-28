@@ -6,6 +6,9 @@ import "@fontsource-variable/instrument-sans/wght.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/600.css";
 import "./styles.css";
+import { startServiceWorker } from "./lib/swUpdate.js";
+
+startServiceWorker();
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>

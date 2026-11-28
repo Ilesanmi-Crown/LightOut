@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { TASKS, prepareRoute, runTask, friendlyError, ON_DEVICE_CHAR_LIMIT, InferenceSource, InferenceMode } from "../ai.js";
 import CloudRetry from "../components/CloudRetry.jsx";
 import ErrorNote from "../components/ErrorNote.jsx";
+import { answerKey, getAnswer, putAnswer } from "../lib/answerCache.js";
+import { sha256 } from "../lib/hash.js";
 import Flashcards from "../components/Flashcards.jsx";
 import Quiz from "../components/Quiz.jsx";
 import PhotoPicker from "../components/PhotoPicker.jsx";
@@ -90,11 +92,23 @@ export default function QuickTools({ online, onStatus }) {
     setError("");
   }
 
-  async function handleTask(taskKey) {
+  /** bypassCache: "Regenerate" always asks the AI again. */
+  async function handleTask(taskKey, { bypassCache = false } = {}) {
     setError("");
     if (!notes.trim() && !image) {
       setError("Paste some notes or add a photo first.");
       return;
+    }
+    const request = { notes, image }; // snapshot so "Retry in cloud" re-sends exactly this
+    const key = await answerKey({ task: taskKey, text: notes, fileHashes: image ? [await sha256(image.base64)] : [] });
+    if (!bypassCache) {
+      const hit = await getAnswer(key);
+      if (hit) {
+        // Same task, same notes, same photo, same model: show the saved answer instantly (works offline too).
+        setResult({ id: Date.now(), taskKey, data: hit.data, source: hit.source, ms: hit.ms, cached: true, streaming: false, request, reason: "" });
+        requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+        return;
+      }
     }
     const route = await prepareRoute({ chars: notes.length, online });
     if (route.status) onStatus(route.status);
@@ -107,7 +121,6 @@ export default function QuickTools({ online, onStatus }) {
     const scrollToResult = () => requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
     let scrolled = false;
     const start = performance.now();
-    const request = { notes, image }; // snapshot so "Retry in cloud" re-sends exactly this
     const id = Date.now();
     try {
       const { data, source } = await runTask({
@@ -127,6 +140,7 @@ export default function QuickTools({ online, onStatus }) {
       const ms = performance.now() - start;
       setResult({ id, taskKey, data, source, reason: route.reason, ms, streaming: false, request });
       recordSource(source);
+      putAnswer(key, { task: taskKey, data, source, ms });
       if (!scrolled) scrollToResult();
     } catch (e) {
       setResult(null);
@@ -227,7 +241,15 @@ export default function QuickTools({ online, onStatus }) {
         <section className="panel result" ref={resultRef}>
           <div className="result-head">
             <h2>{TASKS[result.taskKey].label}</h2>
-            <SourceBadge source={result.source} ms={result.ms} streaming={result.streaming} />
+            <div className="result-badges">
+              {result.cached && <span className="badge saved">Saved answer</span>}
+              <SourceBadge source={result.source} ms={result.ms} streaming={result.streaming} />
+              {!result.streaming && (
+                <button type="button" className="regen-btn" onClick={() => handleTask(result.taskKey, { bypassCache: true })} disabled={!!busy}>
+                  ↻ Regenerate
+                </button>
+              )}
+            </div>
           </div>
           <CloudRetry
             key={result.id}
@@ -244,7 +266,7 @@ export default function QuickTools({ online, onStatus }) {
             {renderTaskData(result.taskKey, result.data, result.streaming)}
             {!result.streaming && <PrivacyLine source={result.source} />}
           </CloudRetry>
-          <p className="hint route-note">{result.reason}</p>
+          {result.reason && <p className="hint route-note">{result.reason}</p>}
         </section>
       )}
     </>

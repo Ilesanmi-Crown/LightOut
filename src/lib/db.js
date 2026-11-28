@@ -18,6 +18,14 @@ local.version(2).stores({
   calls: "++id, at, source",
 });
 
+// v3: caches that make Lightout never repeat work.
+// files:   prepared upload payloads keyed by SHA-256 of the file contents { hash, kind, payload, payloadBytes, bytes, lastUsed }
+// answers: AI results keyed by SHA-256 of (task + input + file hashes + model) { key, task, data, source, ms, at }
+local.version(3).stores({
+  files: "hash, lastUsed",
+  answers: "key, at",
+});
+
 export async function listPacks() {
   return local.packs.orderBy("updatedAt").reverse().toArray();
 }

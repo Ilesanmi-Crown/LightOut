@@ -1,6 +1,6 @@
 // Remote Config with in-app defaults. Offline, the SDK serves the last activated
 // (cached) values, or these defaults on first run.
-import { fetchAndActivate, getNumber, getString } from "firebase/remote-config";
+import { ensureInitialized, fetchAndActivate, getNumber, getString } from "firebase/remote-config";
 import { remoteConfig } from "../firebase.js";
 
 export const CONFIG_DEFAULTS = {
@@ -10,7 +10,7 @@ export const CONFIG_DEFAULTS = {
   pack_question_count: 30,
 };
 
-remoteConfig.settings.minimumFetchIntervalMillis = import.meta.env.DEV ? 60_000 : 60 * 60 * 1000;
+remoteConfig.settings.minimumFetchIntervalMillis = 60 * 60 * 1000; // at most one fetch per hour
 remoteConfig.settings.fetchTimeoutMillis = 8_000;
 remoteConfig.defaultConfig = CONFIG_DEFAULTS;
 
@@ -28,6 +28,15 @@ function read() {
 
 let current = read();
 const listeners = new Set();
+
+// Load the last *activated* values from storage (works offline). Until this resolves,
+// getters return the in-app defaults, so nothing ever waits on Remote Config.
+ensureInitialized(remoteConfig)
+  .then(() => {
+    current = read();
+    listeners.forEach((fn) => fn(current));
+  })
+  .catch(() => {});
 
 export function getConfig() {
   return current;

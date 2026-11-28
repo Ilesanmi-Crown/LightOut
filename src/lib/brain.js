@@ -4,7 +4,7 @@ import { SAMPLE_NOTES } from "../sampleNotes.js";
 
 /** Tiny ONLY_ON_DEVICE prompt. Returns { pass, ms, text } or { pass: false, error }. */
 export async function testOfflineBrain() {
-  const status = await getOnDeviceStatus();
+  const status = await getOnDeviceStatus({ refresh: true });
   if (status !== "available") {
     return {
       pass: false,

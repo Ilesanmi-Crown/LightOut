@@ -1,6 +1,36 @@
 // Background preparation queue for New Pack uploads.
 // Jobs start the moment a file is added, run at most 3 at a time, and can be cancelled.
-import { prepareFile, isCancelled } from "./ingest.js";
+import { prepareFile, isCancelled, detectKind } from "./ingest.js";
+import { hashFile } from "./hash.js";
+import { getPreparedFile, putPreparedFile } from "./fileCache.js";
+
+/** Prepared result for a file: from the cache (by content hash) when possible, otherwise prepared and cached. */
+async function prepareWithCache(file, signal) {
+  let hash = null;
+  try {
+    hash = await hashFile(file);
+  } catch {
+    /* hashing failed (e.g. unreadable file): prepare without the cache */
+  }
+  if (signal.aborted) throw Object.assign(new Error("cancelled"), { name: "CancelledError" });
+  if (hash) {
+    const hit = await getPreparedFile(hash);
+    if (hit && hit.kind === detectKind(file)) {
+      const d = hit.payload.inlineData;
+      return {
+        kind: hit.kind,
+        payload: hit.payload,
+        payloadBytes: hit.payloadBytes,
+        previewUrl: hit.kind === "image" && d ? `data:${d.mimeType};base64,${d.data}` : undefined,
+        hash,
+        fromCache: true,
+      };
+    }
+  }
+  const res = await prepareFile(file, { signal });
+  if (hash) putPreparedFile(hash, res);
+  return { ...res, hash, fromCache: false };
+}
 
 const MAX_PARALLEL = 3;
 
@@ -20,7 +50,7 @@ export function createPrepareQueue(onUpdate) {
       const job = jobs.get(id);
       if (!job || job.controller.signal.aborted) continue;
       running++;
-      prepareFile(job.file, { signal: job.controller.signal })
+      prepareWithCache(job.file, job.controller.signal)
         .then((res) => {
           if (job.controller.signal.aborted) return;
           const r = { status: "ready", ...res };

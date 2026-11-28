@@ -6,6 +6,7 @@ import { syncPacks } from "./lib/sync.js";
 import { validatePack } from "./lib/packs.js";
 import OfflineBrainPanel from "./components/OfflineBrainPanel.jsx";
 import DebugPanel from "./components/DebugPanel.jsx";
+import UpdateToast from "./components/UpdateToast.jsx";
 import { isDebug } from "./lib/diagnostics.js";
 
 const DEBUG = isDebug();
@@ -65,13 +66,14 @@ export default function App() {
   const [syncState, setSyncState] = useState(null); // null | "syncing" | "synced" | "local"
   const { progress: downloadProgress } = useDownload();
 
+  // Session-cached; refreshStatus() re-checks (after a download, or when Offline brain opens).
   const refreshStatus = useCallback(async () => {
-    setStatus(await getOnDeviceStatus());
+    setStatus(await getOnDeviceStatus({ refresh: true }));
   }, []);
 
   useEffect(() => {
-    refreshStatus();
-  }, [refreshStatus, online]);
+    getOnDeviceStatus().then(setStatus);
+  }, []);
 
   // On load and whenever we come back online: Remote Config, anonymous sign-in, pack sync.
   useEffect(() => {
@@ -142,6 +144,7 @@ export default function App() {
       </header>
 
       {DEBUG && <DebugPanel online={online} />}
+      <UpdateToast />
 
       <nav className="mainnav" aria-label="Main">
         {NAV.map((n) => (

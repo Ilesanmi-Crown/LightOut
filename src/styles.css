@@ -882,3 +882,21 @@ textarea:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 6
 .chip.is-error { border-color: color-mix(in srgb, var(--bad) 55%, var(--line)); }
 .chip.is-error .chip-status { color: var(--bad); }
 .chip-status .btn-spinner { width: 10px; height: 10px; }
+
+/* ---------- Update toast + cached answers ---------- */
+.update-toast {
+  position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 50;
+  display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 32px); padding: 10px 10px 10px 16px;
+  border-radius: 14px; border: 1px solid var(--line-2); background: var(--ink-3); box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.6);
+  font-size: 0.9rem; animation: fadeUp var(--t-md) var(--ease) both;
+}
+.update-refresh { padding: 6px 12px; border-radius: 999px; border: 0; background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.update-x { width: 28px; height: 28px; border-radius: 50%; border: 0; background: none; color: var(--muted); font-size: 1.1rem; }
+@media (max-width: 600px) { .update-toast { bottom: calc(96px + env(safe-area-inset-bottom)); } }
+.badge.saved { color: var(--paper); border-color: var(--line-2); background: var(--ink-3); text-transform: none; letter-spacing: 0.02em; }
+.result-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.regen-btn { padding: 5px 10px; border-radius: 999px; border: 1px dashed var(--line-2); background: none; color: var(--muted); font-size: 0.8rem; }
+@media (hover: hover) and (pointer: fine) { .regen-btn:hover { color: var(--paper); border-color: var(--muted); } }
+.data-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.data-actions .ghost { padding: 8px 12px; font-size: 0.85rem; }
+.small-note { margin: 0; font-size: 0.85rem; }

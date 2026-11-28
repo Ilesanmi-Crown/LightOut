@@ -6,6 +6,8 @@ import { getSavings, onSavingsChange } from "../lib/savings.js";
 import { getConfig, onConfigChange } from "../lib/config.js";
 import { friendlyError } from "../ai.js";
 import ErrorNote from "../components/ErrorNote.jsx";
+import { clearCaches } from "../lib/answerCache.js";
+import { deleteAllData } from "../lib/dataReset.js";
 import { formatKB, formatMB, formatNaira, formatSecsShort } from "../lib/format.js";
 
 function stateFor(status, progress) {
@@ -41,27 +43,46 @@ export default function OfflineBrain({ status, online, onRefresh }) {
   const [storage, setStorage] = useState(undefined);
 
   const loadStats = useCallback(() => getCallStats().then(setStats), []);
+  const [cleared, setCleared] = useState("");
+
+  const loadStorage = useCallback(async () => {
+    try {
+      const est = await navigator.storage?.estimate?.();
+      setStorage(est ? (est.usage ?? null) : null);
+    } catch {
+      setStorage(null);
+    }
+  }, []);
+
+  async function handleClearCaches() {
+    if (!window.confirm("Clear saved answers and prepared files? Your packs stay.")) return;
+    await clearCaches();
+    setCleared("Saved answers and file cache cleared.");
+    loadStorage();
+  }
+
+  async function handleDeleteAll() {
+    if (!window.confirm("Delete all your Lightout data? This removes your packs, progress and saved answers, and can't be undone.")) return;
+    await deleteAllData();
+    window.location.replace("/#/packs");
+    window.location.reload();
+  }
 
   useEffect(() => {
+    onRefresh(); // re-check the on-device model whenever this screen opens
     loadStats();
     getSavings().then(setSavings);
     const offCalls = onCallsChange(loadStats);
     const offSavings = onSavingsChange(setSavings);
     const offConfig = onConfigChange((c) => setRate(c.naira_per_mb));
-    (async () => {
-      try {
-        const est = await navigator.storage?.estimate?.();
-        setStorage(est ? (est.usage ?? null) : null);
-      } catch {
-        setStorage(null);
-      }
-    })();
+    loadStorage();
     return () => {
       offCalls();
       offSavings();
       offConfig();
     };
-  }, [loadStats]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadStats, loadStorage]);
 
   const st = stateFor(status, progress);
   const pct = progress === null ? 0 : Math.round(progress * 100);
@@ -202,6 +223,15 @@ export default function OfflineBrain({ status, online, onRefresh }) {
           Lightout data on this device: <b>{storage === undefined ? "…" : storage === null ? "unknown" : `${formatMB(storage)} MB`}</b>
         </p>
         <p className="hint">Chrome stores the AI model separately.</p>
+        <div className="data-actions">
+          <button type="button" className="ghost" onClick={handleClearCaches}>
+            Clear saved answers &amp; file cache
+          </button>
+          <button type="button" className="ghost danger" onClick={handleDeleteAll}>
+            Delete all my data
+          </button>
+        </div>
+        {cleared && <p className="ok-text small-note">{cleared}</p>}
       </section>
     </>
   );
